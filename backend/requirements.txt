@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pandas
+pydantic
+httpx
+groq
+supabase
+pdf2image
+pillow
+rapidfuzz
+python-dotenv
+openai
+mcp
