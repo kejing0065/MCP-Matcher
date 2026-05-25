@@ -185,9 +185,9 @@ function FileDropZone({
           .map((a) => a.replace(".", "").trim())
           .includes(ext);
       });
-      if (dropped.length > 0) onFiles(dropped);
+      if (dropped.length > 0) onFiles([...files, ...dropped]);
     },
-    [accept, onFiles],
+    [accept, onFiles, files],
   );
 
   const removeFile = (idx: number) => {
@@ -246,7 +246,8 @@ function FileDropZone({
         className="hidden"
         onChange={(e) => {
           if (e.target.files && e.target.files.length > 0) {
-            onFiles(Array.from(e.target.files));
+            const newFiles = Array.from(e.target.files);
+            onFiles(multiple ? [...files, ...newFiles] : newFiles);
           }
         }}
       />
@@ -320,82 +321,132 @@ export default function UploadPage() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-56px)] bg-[#0d1117] flex items-center justify-center p-6 select-none">
-      <div className="w-full max-w-[520px] rounded-lg border border-[#30363d] p-6 bg-[#161b22] shadow-sm flex flex-col gap-5 text-left animate-fade-up">
-        {/* Title */}
-        <div>
-          <h2 className="text-[15px] font-semibold text-white">
-            Upload Reconciliation Batch
-          </h2>
-          <p className="text-[12px] text-neutral-400 mt-1">
-            Upload one or more invoices and a bank statement CSV.
-            The system will automatically detect the matching scenario.
-          </p>
+    <div className="min-h-[calc(100vh-56px)] bg-[#0b0f14] relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-32 -right-20 h-80 w-80 rounded-full bg-blue-600/10 blur-[80px]" />
+        <div className="absolute top-40 -left-24 h-72 w-72 rounded-full bg-emerald-500/10 blur-[90px]" />
+        <div className="absolute bottom-0 left-1/3 h-64 w-64 rounded-full bg-indigo-500/10 blur-[80px]" />
+      </div>
+
+      <div className="relative z-10 max-w-6xl mx-auto px-6 py-10">
+        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] items-start">
+          <section className="rounded-2xl border border-[#1f2730] bg-[#0d1117]/80 p-6 lg:p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-blue-300/80">
+              Batch Reconciliation
+              <span className="h-1 w-1 rounded-full bg-blue-400" />
+              AI-Powered
+            </div>
+            <h2 className="mt-3 text-[26px] leading-tight font-semibold text-white">
+              Upload invoices and let the matcher align every transaction.
+            </h2>
+            <p className="mt-3 text-[13px] text-neutral-400 max-w-[520px]">
+              Drop PDF or image invoices plus a bank CSV to start. The engine detects
+              split, consolidated, and complex scenarios while you keep reviewing.
+            </p>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              {[
+                { title: "Smart extraction", desc: "OCR + structured fields" },
+                { title: "Scenario routing", desc: "S1–S6 + bank fee" },
+                { title: "Live progress", desc: "Background processing" },
+                { title: "Review-ready", desc: "Decisions stay audit-safe" },
+              ].map((item) => (
+                <div key={item.title} className="rounded-xl border border-[#1f2730] bg-[#0d1117] p-3">
+                  <p className="text-[12px] font-semibold text-white">{item.title}</p>
+                  <p className="text-[11px] text-neutral-500 mt-1">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6">
+              <p className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold mb-2">Upload flow</p>
+              <div className="grid gap-2">
+                {[
+                  "Add one or more invoice files",
+                  "Attach the bank statement CSV",
+                  "Launch reconciliation and head to review",
+                ].map((step, idx) => (
+                  <div key={step} className="flex items-center gap-3 rounded-lg border border-[#1f2730] bg-[#0d1117]/70 p-2.5">
+                    <div className="h-6 w-6 rounded-full bg-blue-500/15 text-blue-300 text-[11px] font-semibold grid place-items-center">
+                      {idx + 1}
+                    </div>
+                    <span className="text-[12px] text-neutral-300">{step}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-[#2a303a] bg-gradient-to-b from-[#161b22] to-[#11151c] p-6 shadow-[0_18px_40px_-28px_rgba(0,0,0,0.8)]">
+            <div>
+              <h3 className="text-[15px] font-semibold text-white">Upload Reconciliation Batch</h3>
+              <p className="text-[12px] text-neutral-400 mt-1">
+                We will route results to your pending review queue automatically.
+              </p>
+            </div>
+
+            <div className="mt-5">
+              <ScenarioHint invoiceCount={invoices.length} />
+            </div>
+
+            <div className="mt-4 flex flex-col gap-4">
+              <FileDropZone
+                label="Invoices — PDF or Image (multiple supported)"
+                icon="📄"
+                accept=".pdf,.png,.jpg,.jpeg"
+                multiple={true}
+                files={invoices}
+                onFiles={setInvoices}
+              />
+
+              <FileDropZone
+                label="Bank Statement — CSV"
+                icon="🏦"
+                accept=".csv"
+                multiple={false}
+                files={csv}
+                onFiles={(files) => setCsv(files.slice(0, 1))}
+              />
+            </div>
+
+            {ready && invoices.length > 1 && (
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {[
+                  { label: "Split", color: "text-blue-400 border-blue-800/40 bg-blue-950/20" },
+                  { label: "Consolidated", color: "text-purple-400 border-purple-800/40 bg-purple-950/20" },
+                  { label: "Complex", color: "text-indigo-400 border-indigo-800/40 bg-indigo-950/20" },
+                  { label: "Partial", color: "text-amber-400 border-amber-800/40 bg-amber-950/20" },
+                  { label: "Duplicate detection", color: "text-red-400 border-red-800/40 bg-red-950/20" },
+                ].map((b) => (
+                  <span
+                    key={b.label}
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${b.color}`}
+                  >
+                    {b.label}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <button
+              disabled={!ready}
+              onClick={submit}
+              className={`mt-5 w-full py-2.5 rounded-lg text-[13px] font-semibold transition-colors border border-transparent ${
+                ready
+                  ? "bg-blue-600 hover:bg-blue-500 text-white cursor-pointer"
+                  : "bg-[#21262d] text-neutral-500 cursor-not-allowed"
+              }`}
+            >
+              {invoices.length > 1
+                ? `Start Multi-Invoice Reconciliation (${invoices.length} invoices)`
+                : "Start Reconciliation"}
+            </button>
+
+            <p className="mt-3 text-[11px] text-neutral-500 text-center">
+              Reconciliation runs in the background. You will be taken to the review board immediately.
+            </p>
+          </section>
         </div>
-
-        {/* Scenario hint */}
-        <ScenarioHint invoiceCount={invoices.length} />
-
-        {/* Upload zones */}
-        <div className="flex flex-col gap-4">
-          <FileDropZone
-            label="Invoices — PDF or Image (multiple supported)"
-            icon="📄"
-            accept=".pdf,.png,.jpg,.jpeg"
-            multiple={true}
-            files={invoices}
-            onFiles={setInvoices}
-          />
-
-          <FileDropZone
-            label="Bank Statement — CSV"
-            icon="🏦"
-            accept=".csv"
-            multiple={false}
-            files={csv}
-            onFiles={(files) => setCsv(files.slice(0, 1))}
-          />
-        </div>
-
-        {/* Scenario badges row */}
-        {ready && invoices.length > 1 && (
-          <div className="flex flex-wrap gap-1.5">
-            {[
-              { label: "Split", color: "text-blue-400 border-blue-800/40 bg-blue-950/20" },
-              { label: "Consolidated", color: "text-purple-400 border-purple-800/40 bg-purple-950/20" },
-              { label: "Complex", color: "text-indigo-400 border-indigo-800/40 bg-indigo-950/20" },
-              { label: "Partial", color: "text-amber-400 border-amber-800/40 bg-amber-950/20" },
-              { label: "Duplicate detection", color: "text-red-400 border-red-800/40 bg-red-950/20" },
-            ].map((b) => (
-              <span
-                key={b.label}
-                className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${b.color}`}
-              >
-                {b.label}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Submit button */}
-        <button
-          disabled={!ready}
-          onClick={submit}
-          className={`w-full py-2.5 rounded-lg text-[13px] font-semibold transition-colors border border-transparent ${
-            ready
-              ? "bg-blue-600 hover:bg-blue-500 text-white cursor-pointer"
-              : "bg-[#21262d] text-neutral-500 cursor-not-allowed"
-          }`}
-        >
-          {invoices.length > 1
-            ? `Start Multi-Invoice Reconciliation (${invoices.length} invoices)`
-            : "Start Reconciliation"}
-        </button>
-
-        {/* Info note */}
-        <p className="text-[11px] text-neutral-600 text-center">
-          Reconciliation runs in the background. You will be taken to the review board immediately.
-        </p>
       </div>
       <Toast />
     </div>

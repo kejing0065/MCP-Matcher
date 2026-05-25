@@ -23,16 +23,33 @@ export default function ConfidenceBreakdown({
     { label: "Reference", value: breakdown.reference_score ?? 0, weight: "30%" },
   ];
 
+  const overall = breakdown.confidence ?? 0;
+
   return (
     <div className="space-y-3">
       <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold">
         Confidence breakdown
       </div>
 
+      {/* Overall confidence bar */}
+      <div className="flex items-center gap-3 mb-4 pb-3 border-b border-[#30363d]">
+        <div className="w-14 text-[12px] font-bold text-neutral-300 shrink-0">Overall</div>
+        <div className="flex-1 h-2 bg-[#21262d] rounded-full overflow-hidden">
+          <div
+            className={`h-full ${getScoreColor(overall)} rounded-full transition-all duration-500`}
+            style={{ width: `${Math.min(overall, 100)}%` }}
+          />
+        </div>
+        <div className="w-9 text-[12px] font-mono font-bold text-neutral-200 text-right shrink-0">
+          {Math.round(overall)}%
+        </div>
+      </div>
+
+      {/* Individual scores */}
       <div className="space-y-2.5">
         {scores.map((score) => (
           <div key={score.label} className="flex items-center gap-3">
-            <div className="w-[68px] text-[12px] text-neutral-400 shrink-0">{score.label}</div>
+            <div className="w-14 text-[12px] text-neutral-400 shrink-0">{score.label}</div>
             <div className="flex-1 h-1.5 bg-[#21262d] rounded-full overflow-hidden">
               <div
                 className={`h-full ${getScoreColor(score.value)} rounded-full transition-all duration-500`}

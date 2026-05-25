@@ -129,6 +129,8 @@ function ReviewContent() {
 
   const activeResultId = active?.kind === "case" ? active.data.id : undefined;
   const activeGroupId = active?.kind === "group" ? active.data.id : undefined;
+  const isUploading = upload && upload.phase !== "done" && upload.phase !== "error";
+  const detailUpload = isUploading ? null : upload;
 
   return (
     <div className="min-h-[calc(100vh-56px)] bg-[#0d1117] px-6 py-6">
@@ -151,9 +153,9 @@ function ReviewContent() {
         {/* Right Column */}
         <main className="flex-1 min-w-0">
           {active?.kind === "case" ? (
-            <CaseDetail key={active.data.id} result={active.data} onDecision={load} />
+            <CaseDetail key={active.data.id} result={active.data} onDecision={load} upload={detailUpload} />
           ) : active?.kind === "group" ? (
-            <GroupDetail key={active.data.id} group={active.data} onDecision={load} />
+            <GroupDetail key={active.data.id} group={active.data} onDecision={load} upload={detailUpload} />
           ) : (
             <div className="flex flex-col items-center justify-center py-20 rounded-lg border border-[#30363d] bg-[#161b22] text-center select-none shadow-sm">
               <span className="text-3xl mb-3 text-neutral-500">✓</span>

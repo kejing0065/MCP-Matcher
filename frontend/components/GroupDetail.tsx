@@ -7,10 +7,12 @@ import { showToast } from "./Toast";
 import ScenarioBadge from "./ScenarioBadge";
 import ConfidenceBreakdown from "./ConfidenceBreakdown";
 import { SCENARIO_LABELS } from "@/lib/types";
+import type { UploadProgress } from "@/lib/uploadStore";
 
 interface GroupDetailProps {
   group: MatchGroup;
   onDecision: () => void;
+  upload?: UploadProgress | null;
 }
 
 function CoverageBar({ pct, expected, received }: { pct: number; expected?: number; received?: number }) {
@@ -91,7 +93,7 @@ function InfoGrid({ group }: { group: MatchGroup }) {
   );
 }
 
-export default function GroupDetail({ group, onDecision }: GroupDetailProps) {
+export default function GroupDetail({ group, onDecision, upload }: GroupDetailProps) {
   const [busy, setBusy] = useState(false);
   const [btnLoading, setBtnLoading] = useState<"approved" | "rejected" | null>(null);
   const [reviewedBy, setReviewedBy] = useState(group.reviewed_by ?? "");
@@ -102,6 +104,46 @@ export default function GroupDetail({ group, onDecision }: GroupDetailProps) {
   const coveragePct = group.coverage_pct ?? 0;
   const isDuplicate = group.scenario_type === "s6_duplicate";
   const isPartial = group.scenario_type === "s5_partial" || group.status === "partial";
+  const isUploading = upload && upload.phase !== "done" && upload.phase !== "error";
+
+  // Show loading state during analysis
+  if (isUploading) {
+    return (
+      <div className="flex flex-col gap-4 p-5 rounded-lg border border-[#30363d] bg-[#161b22] text-left text-[13px] animate-fade-up">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-[15px] font-semibold text-white tracking-tight">Analyzing...</h2>
+              <span className="w-3.5 h-3.5 border-2 border-neutral-700 border-t-blue-500 rounded-full animate-spin" />
+            </div>
+            <p className="text-[12px] text-neutral-400 mt-0.5">AI is processing your files</p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {upload.invoiceNames && upload.invoiceNames.length > 0 && (
+            <div className="text-[12px] text-neutral-300">
+              <p className="text-neutral-500 mb-1">Files: {upload.invoiceNames.join(", ")}</p>
+            </div>
+          )}
+          {upload.phase && (
+            <div className="text-[12px] text-neutral-300">
+              <p className="text-neutral-500 mb-1">Phase:</p>
+              <p>
+                {upload.phase === "extracting" && "🔍 Extracting data from documents..."}
+                {upload.phase === "parsing" && "📄 Parsing bank statement..."}
+                {upload.phase === "reconciling" && "⚙️ Matching invoices with transactions..."}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="pt-4 border-t border-[#21262d] text-center">
+          <p className="text-[11px] text-neutral-500">Please wait while AI analyzes your submission</p>
+        </div>
+      </div>
+    );
+  }
 
   const decide = async (decision: "approved" | "rejected") => {
     setBusy(true);
@@ -238,12 +280,31 @@ export default function GroupDetail({ group, onDecision }: GroupDetailProps) {
           <div className="space-y-4">
             {group.invoice_score_breakdowns.map((item, idx) => (
               <div key={idx} className={`${idx > 0 ? "border-t border-purple-900/30 pt-3" : ""}`}>
-                <p className="text-[11px] font-semibold text-neutral-200 mb-2">{item.invoice_no ?? item.invoice_id}</p>
-                <div className="pl-2 space-y-2">
-                  <div className="flex justify-between items-center text-[11px]">
-                    <span className="text-neutral-500">Amount Score</span>
-                    <div className="flex items-center gap-2">
-                      <div className="w-20 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
+                <p className="text-[11px] font-semibold text-neutral-200 mb-3">{item.invoice_no ?? item.invoice_id}</p>
+                {item.score_breakdown && (
+                  <div className="space-y-2">
+                    {/* Overall confidence bar */}
+                    <div className="flex items-center gap-3 mb-2 pb-2 border-b border-purple-900/20">
+                      <span className="w-14 text-[11px] font-bold text-neutral-300 shrink-0">Overall</span>
+                      <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
+                        <div
+                          className={`h-full ${
+                            item.score_breakdown.confidence >= 85
+                              ? "bg-green-500"
+                              : item.score_breakdown.confidence >= 60
+                              ? "bg-amber-500"
+                              : "bg-red-500"
+                          }`}
+                          style={{ width: `${Math.min(item.score_breakdown.confidence, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-neutral-300 font-mono w-9 text-right text-[11px] font-bold">{item.score_breakdown.confidence.toFixed(0)}%</span>
+                    </div>
+                    
+                    {/* Individual scores */}
+                    <div className="flex items-center gap-3">
+                      <span className="w-14 text-[11px] text-neutral-400 shrink-0">Amount</span>
+                      <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
                         <div
                           className={`h-full ${
                             item.score_breakdown.amount_score >= 85
@@ -255,13 +316,11 @@ export default function GroupDetail({ group, onDecision }: GroupDetailProps) {
                           style={{ width: `${Math.min(item.score_breakdown.amount_score, 100)}%` }}
                         />
                       </div>
-                      <span className="text-neutral-300 font-mono w-8 text-right">{item.score_breakdown.amount_score.toFixed(0)}</span>
+                      <span className="text-neutral-300 font-mono w-9 text-right text-[11px]">{item.score_breakdown.amount_score.toFixed(0)}%</span>
                     </div>
-                  </div>
-                  <div className="flex justify-between items-center text-[11px]">
-                    <span className="text-neutral-500">Date Score</span>
-                    <div className="flex items-center gap-2">
-                      <div className="w-20 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
+                    <div className="flex items-center gap-3">
+                      <span className="w-14 text-[11px] text-neutral-400 shrink-0">Date</span>
+                      <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
                         <div
                           className={`h-full ${
                             item.score_breakdown.date_score >= 85
@@ -273,13 +332,11 @@ export default function GroupDetail({ group, onDecision }: GroupDetailProps) {
                           style={{ width: `${Math.min(item.score_breakdown.date_score, 100)}%` }}
                         />
                       </div>
-                      <span className="text-neutral-300 font-mono w-8 text-right">{item.score_breakdown.date_score.toFixed(0)}</span>
+                      <span className="text-neutral-300 font-mono w-9 text-right text-[11px]">{item.score_breakdown.date_score.toFixed(0)}%</span>
                     </div>
-                  </div>
-                  <div className="flex justify-between items-center text-[11px]">
-                    <span className="text-neutral-500">Reference Score</span>
-                    <div className="flex items-center gap-2">
-                      <div className="w-20 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
+                    <div className="flex items-center gap-3">
+                      <span className="w-14 text-[11px] text-neutral-400 shrink-0">Reference</span>
+                      <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
                         <div
                           className={`h-full ${
                             item.score_breakdown.reference_score >= 85
@@ -291,22 +348,10 @@ export default function GroupDetail({ group, onDecision }: GroupDetailProps) {
                           style={{ width: `${Math.min(item.score_breakdown.reference_score, 100)}%` }}
                         />
                       </div>
-                      <span className="text-neutral-300 font-mono w-8 text-right">{item.score_breakdown.reference_score.toFixed(0)}</span>
+                      <span className="text-neutral-300 font-mono w-9 text-right text-[11px]">{item.score_breakdown.reference_score.toFixed(0)}%</span>
                     </div>
                   </div>
-                  <div className="flex justify-between items-center text-[11px] font-semibold">
-                    <span className="text-neutral-400">Overall Confidence</span>
-                    <span className={`${
-                      item.score_breakdown.confidence >= 85
-                        ? "text-green-400"
-                        : item.score_breakdown.confidence >= 60
-                        ? "text-amber-400"
-                        : "text-red-400"
-                    } font-mono`}>
-                      {item.score_breakdown.confidence.toFixed(0)}%
-                    </span>
-                  </div>
-                </div>
+                )}
               </div>
             ))}
           </div>

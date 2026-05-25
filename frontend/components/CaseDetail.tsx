@@ -6,10 +6,12 @@ import { updateDecision } from "@/lib/api";
 import { showToast } from "./Toast";
 import ConfidenceBreakdown from "./ConfidenceBreakdown";
 import ScenarioBadge from "./ScenarioBadge";
+import type { UploadProgress } from "@/lib/uploadStore";
 
 interface CaseDetailProps {
   result: MatchResult;
   onDecision: () => void;
+  upload?: UploadProgress | null;
 }
 
 function getConfColors(score: number) {
@@ -49,11 +51,52 @@ function InfoGrid({ result }: { result: MatchResult }) {
   );
 }
 
-export default function CaseDetail({ result, onDecision }: CaseDetailProps) {
+export default function CaseDetail({ result, onDecision, upload }: CaseDetailProps) {
   const [busy, setBusy] = useState(false);
   const [btnLoading, setBtnLoading] = useState<"approved" | "rejected" | null>(null);
   const [reviewedBy, setReviewedBy] = useState(result.reviewed_by ?? "");
   const [reviewReason, setReviewReason] = useState(result.review_reason ?? "");
+
+  const isUploading = upload && upload.phase !== "done" && upload.phase !== "error";
+
+  // Show loading state during analysis
+  if (isUploading) {
+    return (
+      <div className="flex flex-col gap-4 p-5 rounded-lg border border-[#30363d] bg-[#161b22] text-left text-[13px] animate-fade-up">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-[15px] font-semibold text-white tracking-tight">Analyzing...</h2>
+              <span className="w-3.5 h-3.5 border-2 border-neutral-700 border-t-blue-500 rounded-full animate-spin" />
+            </div>
+            <p className="text-[12px] text-neutral-400 mt-0.5">AI is processing your files</p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {upload.invoiceName && (
+            <div className="text-[12px] text-neutral-300">
+              <p className="text-neutral-500 mb-1">File: {upload.invoiceName}</p>
+            </div>
+          )}
+          {upload.phase && (
+            <div className="text-[12px] text-neutral-300">
+              <p className="text-neutral-500 mb-1">Phase:</p>
+              <p>
+                {upload.phase === "extracting" && "🔍 Extracting data from documents..."}
+                {upload.phase === "parsing" && "📄 Parsing bank statement..."}
+                {upload.phase === "reconciling" && "⚙️ Matching invoices with transactions..."}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="pt-4 border-t border-[#21262d] text-center">
+          <p className="text-[11px] text-neutral-500">Please wait while AI analyzes your submission</p>
+        </div>
+      </div>
+    );
+  }
 
   const inv = result.invoice;
   const tx = result.bank_transaction;
