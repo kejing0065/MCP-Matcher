@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import type { MatchResult, AgentLog } from "@/lib/types";
+import React, { useEffect, useState } from "react";
+import type { AgentLog, MatchResult } from "@/lib/types";
 import { getAgentLogs } from "@/lib/api";
 import AuditTrail from "./AuditTrail";
+import ConfidenceBreakdown from "./ConfidenceBreakdown";
 import ScenarioBadge from "./ScenarioBadge";
 
 interface HistoryTableProps {
@@ -14,11 +15,36 @@ interface HistoryTableProps {
 function timeAgo(ds?: string) {
   if (!ds) return "—";
   const diff = Date.now() - new Date(ds).getTime();
-  const m = Math.floor(diff / 60000), h = Math.floor(m / 60), d = Math.floor(h / 24);
+  const m = Math.floor(diff / 60000);
+  const h = Math.floor(m / 60);
+  const d = Math.floor(h / 24);
   if (d > 0) return `${d}d ago`;
   if (h > 0) return `${h}h ago`;
   if (m > 0) return `${m}m ago`;
   return "just now";
+}
+
+function maskText(s?: string) {
+  return s ? s.replace(/\b\d{10,16}\b/g, "**********") : "-";
+}
+
+function displayValue(value?: string | number | null) {
+  if (value === null || value === undefined || value === "") return "-";
+  return String(value);
+}
+
+function exceptionReason(result: MatchResult) {
+  if (result.reason) return result.reason;
+  if (typeof result.variance_pct === "number") {
+    return `Amount variance ${result.variance_pct.toFixed(1)}%`;
+  }
+  return "-";
+}
+
+function confBadge(conf: number) {
+  if (conf >= 85) return "text-green-500 bg-green-950/40 border-green-800/40";
+  if (conf >= 60) return "text-amber-500 bg-amber-950/40 border-amber-800/40";
+  return "text-red-500 bg-red-950/40 border-red-800/40";
 }
 
 function HistoryAuditLogs({
@@ -58,7 +84,9 @@ function HistoryAuditLogs({
     return (
       <div className="flex items-center gap-2 py-4">
         <span className="w-3.5 h-3.5 border-2 border-neutral-700 border-t-blue-500 rounded-full animate-spin shrink-0" />
-        <span className="text-[12px] text-neutral-500 font-medium">Loading audit logs...</span>
+        <span className="text-[12px] text-neutral-500 font-medium">
+          Loading audit logs...
+        </span>
       </div>
     );
   }
@@ -73,10 +101,15 @@ function HistoryAuditLogs({
   );
 }
 
-export default function HistoryTable({ results, activeTab }: HistoryTableProps) {
+export default function HistoryTable({
+  results,
+  activeTab,
+}: HistoryTableProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedView, setExpandedView] = useState<"audit" | "invoice">(
+    "audit",
+  );
 
-  // Filter based on selected tab
   const filtered = results.filter((r) => {
     if (activeTab === "approved") return r.human_decision === "approved";
     if (activeTab === "rejected") return r.human_decision === "rejected";
@@ -88,15 +121,18 @@ export default function HistoryTable({ results, activeTab }: HistoryTableProps) 
     return (
       <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-12 text-center shadow-sm">
         <div className="text-3xl mb-2 text-neutral-500">📋</div>
-        <p className="text-[13px] text-neutral-400 font-semibold">No decisions yet</p>
-        <p className="text-[11px] text-neutral-500 mt-1">Approved and rejected cases will appear here.</p>
+        <p className="text-[13px] text-neutral-400 font-semibold">
+          No decisions yet
+        </p>
+        <p className="text-[11px] text-neutral-500 mt-1">
+          Approved and rejected cases will appear here.
+        </p>
       </div>
     );
   }
 
   return (
     <div className="rounded-lg border border-[#30363d] bg-[#161b22] overflow-hidden flex flex-col shadow-sm">
-      {/* ─── COLUMN HEADER ROW ─── */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-[#21262d] text-[10px] uppercase tracking-wider text-neutral-500 font-bold bg-[#0d1117]/50 select-none">
         <div className="w-20 shrink-0 text-left">Invoice</div>
         <div className="flex-1 text-left">Customer</div>
@@ -107,82 +143,99 @@ export default function HistoryTable({ results, activeTab }: HistoryTableProps) 
         <div className="w-20 shrink-0 text-right">Decided</div>
       </div>
 
-      {/* ─── HISTORY ROWS ─── */}
       <div className="flex flex-col">
         {filtered.map((result, idx) => {
           const isExpanded = expandedId === result.id;
           const isLast = idx === filtered.length - 1;
           const invoice = result.invoice;
+          const tx = result.bank_transaction;
           const variance = result.variance ?? 0;
-          const ok = result.human_decision === "approved";
+          const conf = result.confidence ?? 0;
+          const expectedMyr = invoice?.expected_myr ?? 0;
+          const fxMin = expectedMyr * 0.98;
+          const fxMax = expectedMyr * 1.02;
+          const hasExceptionDetails =
+            !!result.exception_type ||
+            !!result.severity ||
+            !!result.reason ||
+            !!result.recommended_action ||
+            !!result.suggested_execution_action ||
+            (result.requires_human_review !== null &&
+              result.requires_human_review !== undefined) ||
+            !!result.approval_status ||
+            !!result.reviewed_by ||
+            !!result.reviewed_at ||
+            !!result.execution_action ||
+            !!result.execution_status ||
+            !!result.execution_result ||
+            !!result.follow_up_channel ||
+            !!result.follow_up_status ||
+            !!result.follow_up_sent_at ||
+            !!result.follow_up_message;
 
           return (
             <React.Fragment key={result.id}>
-              {/* Row content */}
               <div
-                onClick={() => setExpandedId(isExpanded ? null : result.id)}
+                onClick={() => {
+                  if (isExpanded) {
+                    setExpandedId(null);
+                  } else {
+                    setExpandedId(result.id);
+                    setExpandedView("audit");
+                  }
+                }}
                 className={`flex items-center gap-3 px-4 py-3.5 hover:bg-[#21262d]/50 transition-colors cursor-pointer select-none ${
                   isLast && !isExpanded ? "" : "border-b border-[#21262d]/50"
                 }`}
               >
-                {/* Invoice */}
                 <div className="w-20 shrink-0 text-[13px] font-semibold text-white truncate text-left">
                   {invoice?.invoice_no ?? "INV-????"}
                 </div>
-
-                {/* Customer */}
                 <div className="flex-1 text-[12px] text-neutral-400 truncate text-left">
                   {invoice?.customer ?? "—"}
                 </div>
-
-                {/* Amount */}
                 <div className="w-[90px] shrink-0 font-mono text-[12px] text-white text-right truncate">
                   {invoice?.currency} {invoice?.amount?.toFixed(0)}
                 </div>
-
-                {/* Scenario Badge */}
                 <div className="w-[90px] shrink-0 flex justify-center">
-                  <ScenarioBadge scenarioType={result.scenario_type} size="xs" />
+                  <ScenarioBadge
+                    scenarioType={result.scenario_type}
+                    size="xs"
+                  />
                 </div>
-
-                {/* Variance */}
                 <div
-                  className={`w-20 shrink-0 font-mono text-[12px] text-right font-bold ${
-                    variance >= 0 ? "text-green-500" : "text-red-500"
-                  }`}
+                  className={`w-20 shrink-0 font-mono text-[12px] text-right font-bold ${variance >= 0 ? "text-green-500" : "text-red-500"}`}
                 >
                   {variance >= 0 ? "+" : ""}MYR {variance.toFixed(2)}
                 </div>
-
-                {/* Decision Badge */}
                 <div className="w-[80px] shrink-0 flex justify-center">
                   <span
                     className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold border inline-block ${
                       result.human_decision === "approved"
                         ? "text-green-500 bg-green-950/40 border-green-800/40"
                         : result.human_decision === "partial"
-                        ? "text-amber-500 bg-amber-950/40 border-amber-800/40"
-                        : "text-red-500 bg-red-950/40 border-red-800/40"
+                          ? "text-amber-500 bg-amber-950/40 border-amber-800/40"
+                          : "text-red-500 bg-red-950/40 border-red-800/40"
                     }`}
                   >
-                    {result.human_decision === "approved" ? "✓ Approved"
-                      : result.human_decision === "partial" ? "◑ Partial"
-                      : "✕ Rejected"}
+                    {result.human_decision === "approved"
+                      ? "✓ Approved"
+                      : result.human_decision === "partial"
+                        ? "◑ Partial"
+                        : "✕ Rejected"}
                   </span>
                 </div>
-
-                {/* Decided Relative Date */}
                 <div className="w-20 shrink-0 text-right text-[11px] text-neutral-500 font-medium">
                   {timeAgo(result.human_decision_at || result.created_at)}
                 </div>
               </div>
 
-              {/* Inline Audit Trail Row */}
               {isExpanded && (
-                <div className={`bg-[#0d1117]/80 p-5 px-6 border-b border-[#21262d] relative ${
-                  isLast ? "rounded-b-lg border-b-0" : ""
-                }`}>
-                  {/* Close button */}
+                <div
+                  className={`bg-[#0d1117]/80 p-5 px-6 border-b border-[#21262d] relative ${
+                    isLast ? "rounded-b-lg border-b-0" : ""
+                  }`}
+                >
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -193,25 +246,368 @@ export default function HistoryTable({ results, activeTab }: HistoryTableProps) 
                     ✕
                   </button>
 
-                  {/* Header metadata */}
                   <div className="mb-4 text-left">
                     <h3 className="text-[15px] font-semibold text-white">
                       {invoice?.invoice_no} — audit trail
                     </h3>
                     <p className="text-[12px] text-neutral-400 mt-0.5 font-medium">
-                      {invoice?.customer} · {invoice?.currency} {invoice?.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      {invoice?.customer} · {invoice?.currency}{" "}
+                      {invoice?.amount?.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                      })}
                     </p>
                   </div>
 
-                  {/* Log List timeline */}
-                  <div className="max-w-xl">
-                    <HistoryAuditLogs
-                      matchResultId={result.id}
-                      humanDecision={result.human_decision}
-                      variance={result.variance}
-                      decidedAt={result.human_decision_at || result.created_at}
-                    />
+                  <div className="flex items-center gap-2 mb-4">
+                    <button
+                      onClick={() => setExpandedView("audit")}
+                      className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
+                        expandedView === "audit"
+                          ? "text-white bg-[#21262d] border-[#30363d]"
+                          : "text-neutral-400 border-[#21262d] hover:text-white"
+                      }`}
+                    >
+                      Audit Trail
+                    </button>
+                    <button
+                      onClick={() => setExpandedView("invoice")}
+                      className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
+                        expandedView === "invoice"
+                          ? "text-white bg-[#21262d] border-[#30363d]"
+                          : "text-neutral-400 border-[#21262d] hover:text-white"
+                      }`}
+                    >
+                      Invoice Details
+                    </button>
                   </div>
+
+                  {expandedView === "audit" ? (
+                    <div className="max-w-xl">
+                      <HistoryAuditLogs
+                        matchResultId={result.id}
+                        humanDecision={result.human_decision}
+                        variance={result.variance}
+                        decidedAt={
+                          result.human_decision_at || result.created_at
+                        }
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-[14px] font-semibold text-white">
+                              {invoice?.invoice_no ?? "INV-????"}
+                            </h3>
+                            {result.scenario_type && (
+                              <ScenarioBadge
+                                scenarioType={result.scenario_type}
+                                size="sm"
+                              />
+                            )}
+                          </div>
+                          <p className="text-[12px] text-neutral-400 mt-0.5">
+                            {invoice?.customer ?? "Unknown"} ·{" "}
+                            {invoice?.invoice_date ?? "-"}
+                          </p>
+                        </div>
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[12px] font-bold font-mono border ${confBadge(conf)} shrink-0`}
+                        >
+                          {Math.round(conf)}% conf
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-[14px]">
+                        <div className="p-3.5 rounded-md border border-[#30363d] bg-[#0d1117]">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                            Invoice
+                          </p>
+                          <div className="flex justify-between items-baseline py-2 text-[12px] border-b border-[#21262d]/50 last:border-b-0">
+                            <span className="text-neutral-500">Customer</span>
+                            <span className="text-neutral-200 font-semibold text-right max-w-[62%] break-words">
+                              {invoice?.customer ?? "-"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-baseline py-2 text-[12px] border-b border-[#21262d]/50 last:border-b-0">
+                            <span className="text-neutral-500">Amount</span>
+                            <span className="text-neutral-200 font-semibold text-right max-w-[62%]">
+                              {invoice?.currency}{" "}
+                              {invoice?.amount?.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                              }) ?? "-"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-baseline py-2 text-[12px] border-b border-[#21262d]/50 last:border-b-0">
+                            <span className="text-neutral-500">
+                              Expected MYR
+                            </span>
+                            <span className="text-blue-500 font-bold">
+                              MYR{" "}
+                              {invoice?.expected_myr?.toLocaleString(
+                                undefined,
+                                { minimumFractionDigits: 2 },
+                              ) ?? "-"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-baseline py-2 text-[12px] border-b border-[#21262d]/50 last:border-b-0">
+                            <span className="text-neutral-500">
+                              Invoice date
+                            </span>
+                            <span className="text-neutral-200 font-semibold">
+                              {invoice?.invoice_date ?? "-"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-baseline py-2 text-[12px]">
+                            <span className="text-neutral-500">Reference</span>
+                            <span className="text-neutral-200 font-semibold">
+                              {invoice?.payment_reference ??
+                                invoice?.invoice_no ??
+                                "-"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="p-3.5 rounded-md border border-[#30363d] bg-[#0d1117]">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                            Bank Transaction
+                          </p>
+                          <div className="flex justify-between items-baseline py-2 text-[12px] border-b border-[#21262d]/50 last:border-b-0">
+                            <span className="text-neutral-500">
+                              Description
+                            </span>
+                            <span className="text-[11px] leading-tight break-all font-mono text-neutral-200 text-right max-w-[62%]">
+                              {maskText(tx?.description)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-baseline py-2 text-[12px] border-b border-[#21262d]/50 last:border-b-0">
+                            <span className="text-neutral-500">
+                              Parsed customer
+                            </span>
+                            <span className="text-neutral-200 font-semibold">
+                              {tx?.parsed_customer ?? "-"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-baseline py-2 text-[12px] border-b border-[#21262d]/50 last:border-b-0">
+                            <span className="text-neutral-500">
+                              Received MYR
+                            </span>
+                            <span className="text-green-500 font-bold">
+                              MYR{" "}
+                              {tx?.credit_amount?.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                              }) ?? "-"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-baseline py-2 text-[12px] border-b border-[#21262d]/50 last:border-b-0">
+                            <span className="text-neutral-500">
+                              Transaction date
+                            </span>
+                            <span className="text-neutral-200 font-semibold">
+                              {tx?.transaction_date ?? "-"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-baseline py-2 text-[12px]">
+                            <span className="text-neutral-500">Variance</span>
+                            <span
+                              className={`font-bold ${variance >= 0 ? "text-green-500" : "text-red-500"}`}
+                            >
+                              {variance >= 0 ? "+" : ""}MYR{" "}
+                              {variance.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                              })}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {invoice?.fx_rate && (
+                        <div className="rounded-md p-3.5 bg-blue-950/20 border border-blue-900/50">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-blue-400 mb-2">
+                            FX calculation
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2 font-mono text-[12px] text-neutral-200">
+                            <span>
+                              {invoice.currency} {invoice.amount?.toFixed(0)}
+                            </span>
+                            <span>x</span>
+                            <span>{invoice.fx_rate.toFixed(4)}</span>
+                            <span>=</span>
+                            <span>MYR {invoice.expected_myr?.toFixed(2)}</span>
+                            <span>+/-2%</span>
+                            <span>
+                              {fxMin.toFixed(2)} - {fxMax.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {result.score_breakdown && (
+                        <div className="border-t border-[#21262d]/50 pt-3">
+                          <ConfidenceBreakdown
+                            breakdown={result.score_breakdown}
+                          />
+                        </div>
+                      )}
+
+                      {(result.exception_explanation || result.reason) && (
+                        <div className="rounded-md p-3 bg-amber-950/20 border border-amber-900/50">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-1.5">
+                            Agent explanation
+                          </p>
+                          <p className="text-[12px] text-neutral-300 leading-relaxed">
+                            {result.exception_explanation || result.reason}
+                          </p>
+                        </div>
+                      )}
+
+                      {hasExceptionDetails && (
+                        <div className="rounded-md p-3.5 border border-[#30363d] bg-[#0d1117]">
+                          <div className="grid grid-cols-2 gap-x-10 gap-y-4 text-[12px]">
+                            <div className="flex flex-col gap-3">
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Exception type
+                                </p>
+                                <p className="text-neutral-200 font-semibold">
+                                  {displayValue(result.exception_type)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Reason
+                                </p>
+                                <p className="text-neutral-200 font-semibold">
+                                  {exceptionReason(result)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Recommended action
+                                </p>
+                                <p className="text-neutral-200 font-semibold">
+                                  {displayValue(result.recommended_action)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Suggested execution
+                                </p>
+                                <p className="text-neutral-200 font-semibold">
+                                  {displayValue(
+                                    result.suggested_execution_action,
+                                  )}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Approval status
+                                </p>
+                                <p className="text-neutral-200 font-semibold">
+                                  {displayValue(result.approval_status)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Reviewed at
+                                </p>
+                                <p className="text-neutral-200 font-semibold">
+                                  {displayValue(result.reviewed_at)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Execution status
+                                </p>
+                                <p className="text-neutral-200 font-semibold">
+                                  {displayValue(result.execution_status)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Execution result
+                                </p>
+                                <p className="text-neutral-200 font-semibold">
+                                  {displayValue(result.execution_result)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Follow-up channel
+                                </p>
+                                <p className="text-neutral-200 font-semibold">
+                                  {displayValue(result.follow_up_channel)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Follow-up sent at
+                                </p>
+                                <p className="text-neutral-200 font-semibold">
+                                  {displayValue(result.follow_up_sent_at)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Follow-up message
+                                </p>
+                                <p className="text-neutral-200 font-semibold break-words">
+                                  {displayValue(result.follow_up_message)}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex flex-col gap-3">
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Severity
+                                </p>
+                                <p className="text-neutral-200 font-semibold">
+                                  {displayValue(result.severity)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Human review
+                                </p>
+                                <p className="text-neutral-200 font-semibold">
+                                  {result.requires_human_review === true
+                                    ? "Required"
+                                    : result.requires_human_review === false
+                                      ? "Not required"
+                                      : "-"}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Reviewed by
+                                </p>
+                                <p className="text-neutral-200 font-semibold">
+                                  {displayValue(result.reviewed_by)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Execution action
+                                </p>
+                                <p className="text-neutral-200 font-semibold">
+                                  {displayValue(result.execution_action)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Follow-up status
+                                </p>
+                                <p className="text-neutral-200 font-semibold">
+                                  {displayValue(result.follow_up_status)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </React.Fragment>

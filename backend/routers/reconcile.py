@@ -238,6 +238,24 @@ async def reconcile(req: ReconcileRequest):
     # Step 5 — Filter to likely matching transactions for this invoice
     candidate_txs = matcher.filter_transactions_for_invoice(invoice, bank_txs)
 
+    # Prefer a single best transaction unless a multi-transaction subset matches better
+    best_single = matcher.best_match(invoice, candidate_txs)
+    best_tx = best_single["transaction"]
+
+    subset = matcher.find_best_transaction_subset_for_invoice(invoice, candidate_txs)
+    if subset and len(subset) > 1:
+        expected_myr = invoice.get("expected_myr") or 0.0
+        single_diff = abs((best_tx.get("credit_amount") or 0.0) - expected_myr)
+        subset_total = sum((tx.get("credit_amount") or 0.0) for tx in subset)
+        subset_diff = abs(subset_total - expected_myr)
+        # Keep split only if it clearly improves the match
+        if expected_myr > 0 and subset_diff + 0.01 < single_diff:
+            candidate_txs = subset
+        else:
+            candidate_txs = [best_tx]
+    else:
+        candidate_txs = [best_tx]
+
     # Step 6 — Detect scenario and match
     scenario = matcher.detect_scenario([invoice], candidate_txs, claimed_tx_ids)
     best = matcher.best_match(invoice, candidate_txs)
