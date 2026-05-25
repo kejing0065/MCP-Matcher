@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { MatchResult, MatchGroup } from "@/lib/types";
 import { SCENARIO_LABELS, SCENARIO_ICONS, SCENARIO_COLORS } from "@/lib/types";
 
@@ -44,9 +45,42 @@ export default function PendingQueue({
   active,
   onSelect,
 }: PendingQueueProps) {
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
+
   const isUploading = upload && upload.phase !== "done" && upload.phase !== "error";
 
-  const totalPending = pending.length + pendingGroups.length;
+  // Get all invoice IDs that are in groups
+  const groupedInvoiceIds = new Set<string>();
+  pendingGroups.forEach((group) => {
+    group.invoices?.forEach((inv) => {
+      if (inv.id) groupedInvoiceIds.add(inv.id);
+    });
+  });
+
+  // Filter out individual pending cases that are already in groups
+  const filteredPending = pending.filter((result) => {
+    return !result.invoice?.id || !groupedInvoiceIds.has(result.invoice.id);
+  });
+
+  // Create a map of invoice ID to MatchResult for grouped invoices
+  const invoiceToResult = new Map<string, MatchResult>();
+  pending.forEach((result) => {
+    if (result.invoice?.id && groupedInvoiceIds.has(result.invoice.id)) {
+      invoiceToResult.set(result.invoice.id, result);
+    }
+  });
+
+  const toggleGroupExpand = (groupId: string) => {
+    const newExpanded = new Set(expandedGroupIds);
+    if (newExpanded.has(groupId)) {
+      newExpanded.delete(groupId);
+    } else {
+      newExpanded.add(groupId);
+    }
+    setExpandedGroupIds(newExpanded);
+  };
+
+  const totalPending = filteredPending.length + pendingGroups.length;
 
   return (
     <div className="flex flex-col gap-5 w-[280px] shrink-0">
@@ -88,7 +122,7 @@ export default function PendingQueue({
           ) : (
             <>
               {/* ─ Single-result cases ─ */}
-              {pending.map((result) => {
+              {filteredPending.map((result) => {
                 const isActive = (activeResultId ?? active?.id) === result.id;
                 const isProcessing = !result.exception_explanation && result.status !== "matched";
                 const inv = result.invoice;
@@ -145,50 +179,110 @@ export default function PendingQueue({
               {/* ─ Group cases ─ */}
               {pendingGroups.map((group) => {
                 const isActive = activeGroupId === group.id;
+                const isExpanded = expandedGroupIds.has(group.id);
                 const invNames = group.invoices?.map((i) => i.invoice_no).filter(Boolean).join(", ") ?? "Multiple invoices";
                 const conf = group.confidence ?? 0;
 
                 return (
-                  <button
-                    key={group.id}
-                    onClick={() => onSelectGroup(group)}
-                    className={`w-full text-left p-3.5 flex items-center gap-3 transition-colors border-l-2 ${
-                      isActive && !isUploading
-                        ? "bg-[#0d1117] border-l-purple-500"
-                        : "border-l-transparent hover:bg-[#21262d]/60"
-                    } cursor-pointer`}
-                  >
-                    {/* Status dot */}
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDot(group.status ?? "review")}`} />
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[12px] font-semibold text-white truncate">
-                          {group.invoices && group.invoices.length > 1
-                            ? `Group (${group.invoices.length} invoices)`
-                            : invNames}
+                  <div key={group.id}>
+                    <div
+                      className={`w-full text-left p-3.5 flex items-center gap-3 transition-colors border-l-2 ${
+                        isActive && !isUploading
+                          ? "bg-[#0d1117] border-l-purple-500"
+                          : "border-l-transparent hover:bg-[#21262d]/60"
+                      }`}
+                    >
+                      {/* Expand/Collapse arrow button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleGroupExpand(group.id);
+                        }}
+                        className="p-1 hover:bg-[#30363d] rounded transition-colors shrink-0"
+                        title="Expand/collapse invoices"
+                      >
+                        <span className={`text-neutral-400 transition-transform inline-block ${isExpanded ? "rotate-180" : ""}`}>
+                          ▼
                         </span>
-                        {group.scenario_type && (
-                          <span className={`inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full text-[9px] font-bold border ${SCENARIO_COLORS[group.scenario_type]}`}>
-                            <span className="font-mono">{SCENARIO_ICONS[group.scenario_type]}</span>
-                            {SCENARIO_LABELS[group.scenario_type]}
+                      </button>
+
+                      {/* Status dot */}
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDot(group.status ?? "review")}`} />
+
+                      {/* Group info - clickable to show detail */}
+                      <button
+                        onClick={() => onSelectGroup(group)}
+                        className="flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
+                      >
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[12px] font-semibold text-white truncate">
+                            {group.invoices && group.invoices.length > 1
+                              ? `Group (${group.invoices.length} invoices)`
+                              : invNames}
                           </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-neutral-500 truncate">
-                        {group.invoices?.map((i) => i.customer).filter(Boolean).join(", ") ?? "—"}
-                      </div>
+                          {group.scenario_type && (
+                            <span className={`inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full text-[9px] font-bold border ${SCENARIO_COLORS[group.scenario_type]}`}>
+                              <span className="font-mono">{SCENARIO_ICONS[group.scenario_type]}</span>
+                              {SCENARIO_LABELS[group.scenario_type]}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-neutral-500 truncate">
+                          {group.invoices?.map((i) => i.customer).filter(Boolean).join(", ") ?? "—"}
+                        </div>
+                      </button>
+
+                      {/* Stats - clickable to show detail */}
+                      <button
+                        onClick={() => onSelectGroup(group)}
+                        className="flex flex-col items-end gap-1 shrink-0 hover:opacity-80 transition-opacity"
+                      >
+                        <span className="text-[11px] text-neutral-400 font-mono">
+                          {(group.coverage_pct ?? 0).toFixed(0)}% paid
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold font-mono border ${confBadge(conf)}`}>
+                          {Math.round(conf)}%
+                        </span>
+                      </button>
                     </div>
 
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <span className="text-[11px] text-neutral-400 font-mono">
-                        {(group.coverage_pct ?? 0).toFixed(0)}% paid
-                      </span>
-                      <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold font-mono border ${confBadge(conf)}`}>
-                        {Math.round(conf)}%
-                      </span>
-                    </div>
-                  </button>
+                    {/* ─ Individual invoices dropdown ─ */}
+                    {isExpanded && group.invoices && group.invoices.length > 0 && (
+                      <div className="bg-[#0d1117]/60 border-l-2 border-l-purple-500/40 divide-y divide-[#30363d]">
+                        {group.invoices.map((inv, idx) => {
+                          const matchResult = inv.id ? invoiceToResult.get(inv.id) : undefined;
+                          
+                          return (
+                            <button
+                              key={inv.id ?? idx}
+                              onClick={() => {
+                                if (matchResult) {
+                                  onSelectCase(matchResult);
+                                  onSelect?.(matchResult);
+                                }
+                              }}
+                              disabled={!matchResult}
+                              className={`w-full p-3 pl-10 text-left transition-colors hover:bg-[#21262d]/40 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                activeResultId === matchResult?.id ? "bg-[#21262d]/60" : ""
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                                <span className="text-[11px] font-medium text-neutral-300 truncate">
+                                  {inv.invoice_no ?? "INV-????"}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-neutral-500 truncate">
+                                {inv.customer ?? "Unknown"}
+                              </div>
+                              <div className="text-[10px] text-neutral-600 mt-1">
+                                {inv.currency} {inv.amount?.toFixed(0) ?? "—"}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </>

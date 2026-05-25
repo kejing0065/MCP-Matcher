@@ -35,16 +35,6 @@ function InfoGrid({ result }: { result: MatchResult }) {
     ["Recommended action", result.recommended_action, true],
     ["Suggested execution", result.suggested_execution_action],
     ["Human review", result.requires_human_review ? "Required" : "Not required"],
-    ["Approval status", result.approval_status],
-    ["Reviewed by", result.reviewed_by],
-    ["Reviewed at", result.reviewed_at ?? result.human_decision_at],
-    ["Execution action", result.execution_action],
-    ["Execution status", result.execution_status],
-    ["Execution result", result.execution_result, true],
-    ["Follow-up channel", result.follow_up_channel],
-    ["Follow-up status", result.follow_up_status],
-    ["Follow-up sent at", result.follow_up_sent_at],
-    ["Follow-up message", result.follow_up_message, true],
   ];
 
   return (

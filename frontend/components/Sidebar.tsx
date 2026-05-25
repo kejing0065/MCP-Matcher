@@ -13,12 +13,15 @@ export default function Sidebar() {
   ];
 
   return (
-    <div className="w-[280px] bg-[#161b22] border-r border-[#30363d] flex flex-col p-4 shrink-0">
-      <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent mb-8">
+    <div className="w-full h-16 bg-[#161b22] border-b border-[#30363d] flex items-center justify-between px-6 shrink-0 sticky top-0 z-50">
+      
+      {/* LOGO */}
+      <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
         MCP MATCHER
       </h1>
 
-      <nav className="flex flex-col gap-2">
+      {/* Navigation Links */}
+      <nav className="flex items-center gap-4">
         {links.map((link) => {
           const isActive = pathname === link.href;
           return (
@@ -36,6 +39,7 @@ export default function Sidebar() {
           );
         })}
       </nav>
+      
     </div>
   );
 }

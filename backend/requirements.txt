@@ -8,6 +8,7 @@ groq
 supabase
 pdf2image
 pillow
+pdfplumber
 rapidfuzz
 python-dotenv
 openai

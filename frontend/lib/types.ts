@@ -119,6 +119,13 @@ export interface MatchGroup {
   invoices?: Invoice[];
   bank_transactions?: BankTransaction[];
   match_results?: MatchResult[];
+  // Scoring
+  score_breakdown?: ScoreBreakdown;
+  invoice_score_breakdowns?: Array<{
+    invoice_id: string;
+    invoice_no?: string;
+    score_breakdown: ScoreBreakdown;
+  }>;
 }
 
 export interface DashboardStats {

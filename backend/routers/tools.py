@@ -23,40 +23,53 @@ async def extract_document(file: UploadFile = File(...)):
     Accept image (jpg/png) or PDF. Use Groq Llama vision to extract invoice fields.
     Saves to invoices table and returns extracted fields + invoice id.
     """
-    file_bytes = await file.read()
-    filename = file.filename or "upload"
-
     try:
-        extracted = await groq_extractor.extract_invoice(file_bytes, filename)
-        extraction_method = "groq"
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        file_bytes = await file.read()
+        filename = file.filename or "upload"
 
-    # Save to Supabase invoices table
-    db = get_supabase()
-    insert_data = {
-        "invoice_no": extracted.get("invoice_no"),
-        "customer": extracted.get("customer"),
-        "amount": extracted.get("amount"),
-        "currency": extracted.get("currency"),
-        "invoice_date": extracted.get("invoice_date"),
-    }
-    # Remove None values so Supabase uses column defaults
-    insert_data = {k: v for k, v in insert_data.items() if v is not None}
+        try:
+            extracted = await groq_extractor.extract_invoice(file_bytes, filename)
+            extraction_method = "groq"
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=f"Extraction error: {str(e)}")
+        except RuntimeError as e:
+            raise HTTPException(status_code=503, detail=f"Service error: {str(e)}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Unexpected error during extraction: {str(e)}")
 
-    result = db.table("invoices").insert(insert_data).execute()
-    if not result.data:
-        raise HTTPException(status_code=500, detail="Failed to save invoice to database")
+        # Save to Supabase invoices table
+        try:
+            db = get_supabase()
+            insert_data = {
+                "invoice_no": extracted.get("invoice_no"),
+                "customer": extracted.get("customer"),
+                "amount": extracted.get("amount"),
+                "currency": extracted.get("currency"),
+                "invoice_date": extracted.get("invoice_date"),
+            }
+            # Remove None values so Supabase uses column defaults
+            insert_data = {k: v for k, v in insert_data.items() if v is not None}
 
-    invoice_id = result.data[0]["id"]
+            result = db.table("invoices").insert(insert_data).execute()
+            if not result.data:
+                raise HTTPException(status_code=500, detail="Failed to save invoice to database")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database save error: {str(e)}")
 
-    return {
-        "id": invoice_id,
-        "extraction_method": extraction_method,
-        **extracted,
-    }
+        invoice_id = result.data[0]["id"]
+
+        return {
+            "id": invoice_id,
+            "extraction_method": extraction_method,
+            **extracted,
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing document: {str(e)}")
 
 
 # ─── Tool 2: POST /tools/parse-bank-csv ──────────────────────────────────────

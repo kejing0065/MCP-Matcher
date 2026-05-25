@@ -555,6 +555,30 @@ async def reconcile_multi(req: MultiReconcileRequest):
                  invoice_id=invoice["id"],
                  match_result_id=mr_result.data[0]["id"])
 
+    # Fetch individual match results to get their score breakdowns
+    invoice_score_breakdowns = []
+    if match_result_ids:
+        mrs_res = db.table("match_results").select("*").in_("id", match_result_ids).execute()
+        if mrs_res.data:
+            for mr in mrs_res.data:
+                # Extract score breakdown from match result
+                invoice_id = mr.get("invoice_id")
+                invoice_no = next((inv.get("invoice_no") for inv in candidate_invoices if inv.get("id") == invoice_id), None)
+                
+                # Reconstruct score breakdown if it was stored as JSON, or get individual scores
+                score_breakdown = {
+                    "amount_score": mr.get("amount_score", 0),
+                    "date_score": mr.get("date_score", 0),
+                    "reference_score": mr.get("reference_score", 0),
+                    "confidence": mr.get("confidence", 0),
+                }
+                
+                invoice_score_breakdowns.append({
+                    "invoice_id": invoice_id,
+                    "invoice_no": invoice_no,
+                    "score_breakdown": score_breakdown,
+                })
+
     return {
         "group_id": group_id,
         "scenario_type": scenario,
@@ -568,6 +592,8 @@ async def reconcile_multi(req: MultiReconcileRequest):
         "coverage_pct": group_result["coverage_pct"],
         "is_partial": group_result["is_partial"],
         "remaining_amount_myr": group_result["remaining_amount_myr"],
+        "score_breakdown": group_result.get("score_breakdown"),
+        "invoice_score_breakdowns": invoice_score_breakdowns,
         **_classification_fields(classification),
         "match_result_ids": match_result_ids,
     }
@@ -812,6 +838,34 @@ async def dashboard():
     for g in groups:
         g["invoices"] = [group_inv_map.get(i) for i in (g.get("invoice_ids") or []) if i in group_inv_map]
         g["bank_transactions"] = [group_tx_map.get(t) for t in (g.get("bank_transaction_ids") or []) if t in group_tx_map]
+        
+        # Fetch and enrich with individual invoice score breakdowns
+        group_match_results = [r for r in match_results if r.get("match_group_id") == g.get("id")]
+        invoice_score_breakdowns = []
+        
+        for mr in group_match_results:
+            invoice_id = mr.get("invoice_id")
+            if invoice_id:
+                invoice = invoices_map.get(invoice_id)
+                bank_tx = txs_map.get(mr.get("bank_transaction_id"))
+                
+                # Compute score breakdown for this invoice-transaction pair
+                if invoice and bank_tx:
+                    try:
+                        scored = matcher.score_match(invoice, bank_tx)
+                        score_breakdown = scored.get("score_breakdown")
+                    except Exception:
+                        score_breakdown = None
+                else:
+                    score_breakdown = None
+                
+                invoice_score_breakdowns.append({
+                    "invoice_id": invoice_id,
+                    "invoice_no": invoice.get("invoice_no") if invoice else None,
+                    "score_breakdown": score_breakdown,
+                })
+        
+        g["invoice_score_breakdowns"] = invoice_score_breakdowns
         enriched_groups.append(g)
 
     # Stats

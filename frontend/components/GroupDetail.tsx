@@ -5,6 +5,7 @@ import type { MatchGroup } from "@/lib/types";
 import { updateGroupDecision } from "@/lib/api";
 import { showToast } from "./Toast";
 import ScenarioBadge from "./ScenarioBadge";
+import ConfidenceBreakdown from "./ConfidenceBreakdown";
 import { SCENARIO_LABELS } from "@/lib/types";
 
 interface GroupDetailProps {
@@ -12,7 +13,42 @@ interface GroupDetailProps {
   onDecision: () => void;
 }
 
-function CoverageBar({ pct }: { pct: number }) {
+function CoverageBar({ pct, expected, received }: { pct: number; expected?: number; received?: number }) {
+  if (expected && received && expected > 0) {
+    const isOverpaid = received > expected;
+    const excess = Math.max(0, received - expected);
+    const missing = Math.max(0, expected - received);
+    
+    if (isOverpaid) {
+      // Overpaid: green for expected, blue for excess
+      const greenPct = (expected / received) * 100;
+      const bluePct = (excess / received) * 100;
+      return (
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-1.5 bg-[#21262d] rounded-full overflow-hidden flex">
+            <div className="h-full bg-green-500 transition-all duration-500" style={{ width: `${greenPct}%` }} />
+            <div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${bluePct}%` }} />
+          </div>
+          <span className="text-[12px] font-mono font-bold text-neutral-200 w-10 text-right shrink-0">{pct.toFixed(1)}%</span>
+        </div>
+      );
+    } else {
+      // Underpaid: blue for received, red for missing
+      const bluePct = (received / expected) * 100;
+      const redPct = (missing / expected) * 100;
+      return (
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-1.5 bg-[#21262d] rounded-full overflow-hidden flex">
+            <div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${bluePct}%` }} />
+            <div className="h-full bg-red-500 transition-all duration-500" style={{ width: `${redPct}%` }} />
+          </div>
+          <span className="text-[12px] font-mono font-bold text-neutral-200 w-10 text-right shrink-0">{pct.toFixed(1)}%</span>
+        </div>
+      );
+    }
+  }
+  
+  // Fallback to single color bar if amounts not provided
   const color = pct >= 95 ? "bg-green-500" : pct >= 60 ? "bg-amber-500" : "bg-red-500";
   return (
     <div className="flex items-center gap-2">
@@ -41,16 +77,6 @@ function InfoGrid({ group }: { group: MatchGroup }) {
     ["Recommended action", group.recommended_action, true],
     ["Suggested execution", group.suggested_execution_action],
     ["Human review", group.requires_human_review ? "Required" : "Not required"],
-    ["Approval status", group.approval_status],
-    ["Reviewed by", group.reviewed_by],
-    ["Reviewed at", group.reviewed_at ?? group.human_decision_at],
-    ["Execution action", group.execution_action],
-    ["Execution status", group.execution_status],
-    ["Execution result", group.execution_result, true],
-    ["Follow-up channel", group.follow_up_channel],
-    ["Follow-up status", group.follow_up_status],
-    ["Follow-up sent at", group.follow_up_sent_at],
-    ["Follow-up message", group.follow_up_message, true],
   ];
 
   return (
@@ -142,7 +168,7 @@ export default function GroupDetail({ group, onDecision }: GroupDetailProps) {
             MYR {(group.total_received_myr ?? 0).toFixed(2)} / {(group.total_expected_myr ?? 0).toFixed(2)}
           </span>
         </div>
-        <CoverageBar pct={coveragePct} />
+        <CoverageBar pct={coveragePct} expected={group.total_expected_myr} received={group.total_received_myr} />
       </div>
 
       <div className="grid grid-cols-2 gap-[14px]">
@@ -180,6 +206,119 @@ export default function GroupDetail({ group, onDecision }: GroupDetailProps) {
         <FieldRow label="Total Variance" value={<span className={`font-mono font-bold ${(group.total_variance_myr ?? 0) >= 0 ? "text-green-500" : "text-red-500"}`}>{(group.total_variance_myr ?? 0) >= 0 ? "+" : ""}MYR {(group.total_variance_myr ?? 0).toFixed(2)}</span>} />
         {isPartial && <FieldRow label="Outstanding" value={<span className="text-amber-400 font-mono font-bold">MYR {(group.remaining_amount_myr ?? 0).toFixed(2)}</span>} />}
       </div>
+
+      {invoices.some((inv) => inv.fx_rate) && (
+        <div className="rounded-md p-3.5 bg-blue-950/20 border border-blue-900/50">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-blue-400 mb-3">
+            FX Calculations
+          </p>
+          <div className="space-y-2">
+            {invoices.map((inv, idx) => (
+              inv.fx_rate && (
+                <div key={inv.id ?? idx} className="flex items-center gap-2 font-mono text-[12px] text-neutral-200 pb-2 border-b border-blue-900/30 last:border-b-0 last:pb-0">
+                  <span className="text-neutral-500 shrink-0">{inv.currency}</span>
+                  <span className="font-semibold">{inv.amount?.toFixed(0)}</span>
+                  <span className="text-neutral-500">×</span>
+                  <span className="text-blue-300">{inv.fx_rate.toFixed(4)}</span>
+                  <span className="text-neutral-500">=</span>
+                  <span className="text-green-400 font-bold">{inv.expected_myr?.toFixed(2)}</span>
+                  <span className="text-neutral-600 ml-auto text-[11px]">{inv.invoice_no}</span>
+                </div>
+              )
+            ))}
+          </div>
+        </div>
+      )}
+
+      {group.invoice_score_breakdowns && group.invoice_score_breakdowns.length > 0 && (
+        <div className="rounded-md p-3.5 bg-purple-950/20 border border-purple-900/50">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-purple-400 mb-3">
+            Invoice Confidence Breakdown
+          </p>
+          <div className="space-y-4">
+            {group.invoice_score_breakdowns.map((item, idx) => (
+              <div key={idx} className={`${idx > 0 ? "border-t border-purple-900/30 pt-3" : ""}`}>
+                <p className="text-[11px] font-semibold text-neutral-200 mb-2">{item.invoice_no ?? item.invoice_id}</p>
+                <div className="pl-2 space-y-2">
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span className="text-neutral-500">Amount Score</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
+                        <div
+                          className={`h-full ${
+                            item.score_breakdown.amount_score >= 85
+                              ? "bg-green-500"
+                              : item.score_breakdown.amount_score >= 60
+                              ? "bg-amber-500"
+                              : "bg-red-500"
+                          }`}
+                          style={{ width: `${Math.min(item.score_breakdown.amount_score, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-neutral-300 font-mono w-8 text-right">{item.score_breakdown.amount_score.toFixed(0)}</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span className="text-neutral-500">Date Score</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
+                        <div
+                          className={`h-full ${
+                            item.score_breakdown.date_score >= 85
+                              ? "bg-green-500"
+                              : item.score_breakdown.date_score >= 60
+                              ? "bg-amber-500"
+                              : "bg-red-500"
+                          }`}
+                          style={{ width: `${Math.min(item.score_breakdown.date_score, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-neutral-300 font-mono w-8 text-right">{item.score_breakdown.date_score.toFixed(0)}</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span className="text-neutral-500">Reference Score</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
+                        <div
+                          className={`h-full ${
+                            item.score_breakdown.reference_score >= 85
+                              ? "bg-green-500"
+                              : item.score_breakdown.reference_score >= 60
+                              ? "bg-amber-500"
+                              : "bg-red-500"
+                          }`}
+                          style={{ width: `${Math.min(item.score_breakdown.reference_score, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-neutral-300 font-mono w-8 text-right">{item.score_breakdown.reference_score.toFixed(0)}</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center text-[11px] font-semibold">
+                    <span className="text-neutral-400">Overall Confidence</span>
+                    <span className={`${
+                      item.score_breakdown.confidence >= 85
+                        ? "text-green-400"
+                        : item.score_breakdown.confidence >= 60
+                        ? "text-amber-400"
+                        : "text-red-400"
+                    } font-mono`}>
+                      {item.score_breakdown.confidence.toFixed(0)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {group.score_breakdown && (
+        <div className="border-t border-[#21262d]/50 pt-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-3">Group Overall Confidence</p>
+          <ConfidenceBreakdown breakdown={group.score_breakdown} />
+        </div>
+      )}
 
       <InfoGrid group={group} />
 
