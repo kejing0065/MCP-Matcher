@@ -161,6 +161,52 @@ def best_match(invoice: dict, bank_transactions: list) -> dict:
     return {"transaction": best_tx, **best_score}
 
 
+def filter_transactions_for_invoice(
+    invoice: dict,
+    bank_transactions: list,
+    min_ref_score: float = 70.0,
+    amount_tolerance_pct: float = 10.0,
+) -> list:
+    """
+    Return a narrowed set of transactions likely related to a single invoice.
+    Uses fuzzy reference score first, then falls back to amount proximity.
+    """
+    expected = invoice.get("expected_myr") or 0.0
+    invoice_no = invoice.get("invoice_no")
+    customer = invoice.get("customer")
+
+    if not bank_transactions:
+        return []
+
+    # 1) Reference-based filter
+    ref_hits = []
+    for tx in bank_transactions:
+        score = _reference_score(
+            customer,
+            invoice_no,
+            tx.get("parsed_customer"),
+            tx.get("parsed_reference"),
+        )
+        if score >= min_ref_score:
+            ref_hits.append(tx)
+
+    if ref_hits:
+        return ref_hits
+
+    # 2) Amount-proximity fallback
+    if expected <= 0:
+        return bank_transactions
+
+    amount_hits = []
+    for tx in bank_transactions:
+        received = tx.get("credit_amount") or 0.0
+        diff_pct = abs(expected - received) / expected * 100
+        if diff_pct <= amount_tolerance_pct:
+            amount_hits.append(tx)
+
+    return amount_hits or bank_transactions
+
+
 # ─── Duplicate Detection ──────────────────────────────────────────────────────
 
 def detect_duplicate(

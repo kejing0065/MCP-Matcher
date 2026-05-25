@@ -123,9 +123,12 @@ async def reconcile(req: ReconcileRequest):
     # Step 4 — Duplicate detection
     claimed_tx_ids = _get_claimed_tx_ids(db)
 
-    # Step 5 — Detect scenario and match
-    scenario = matcher.detect_scenario([invoice], bank_txs, claimed_tx_ids)
-    best = matcher.best_match(invoice, bank_txs)
+    # Step 5 — Filter to likely matching transactions for this invoice
+    candidate_txs = matcher.filter_transactions_for_invoice(invoice, bank_txs)
+
+    # Step 6 — Detect scenario and match
+    scenario = matcher.detect_scenario([invoice], candidate_txs, claimed_tx_ids)
+    best = matcher.best_match(invoice, candidate_txs)
     best_tx = best["transaction"]
 
     # Compute partial / bank fee info
