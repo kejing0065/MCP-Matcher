@@ -144,15 +144,26 @@ async def classify_exception(match_result_id: str) -> str:
         invoice = inv_res.data[0]
         bank_tx = tx_res.data[0]
 
-        classification = await chutes.classify_exception(invoice, bank_tx, match)
+        classification = matcher.classify_single_match_exception(invoice, bank_tx, match)
         
         # Update match_results
         db.table("match_results").update({
             "exception_type": classification["exception_type"],
-            "exception_explanation": classification["exception_explanation"],
+            "exception_explanation": classification["reason"],
+            "severity": classification["severity"],
+            "recommended_action": classification["recommended_action"],
+            "requires_human_review": classification["requires_human_review"],
+            "suggested_execution_action": classification["suggested_execution_action"],
         }).eq("id", match_result_id).execute()
 
-        return json.dumps(classification, indent=2)
+        return json.dumps({
+            "exception_type": classification["exception_type"],
+            "exception_explanation": classification["reason"],
+            "severity": classification["severity"],
+            "recommended_action": classification["recommended_action"],
+            "requires_human_review": classification["requires_human_review"],
+            "suggested_execution_action": classification["suggested_execution_action"],
+        }, indent=2)
     except Exception as e:
         return f"Error classifying exception: {e}"
 

@@ -50,8 +50,24 @@ export interface MatchResult {
   reason?: string;
   exception_type?: string;
   exception_explanation?: string | null;
+  severity?: "Low" | "Medium" | "High" | null;
+  recommended_action?: string | null;
+  requires_human_review?: boolean | null;
+  suggested_execution_action?: string | null;
   human_decision?: "approved" | "rejected" | "partial" | null;
   human_decision_at?: string;
+  approval_status?: "Approved" | "Rejected" | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  review_reason?: string | null;
+  case_status?: string | null;
+  execution_action?: string | null;
+  execution_status?: "Ready" | "Executed" | "Skipped" | null;
+  execution_result?: string | null;
+  follow_up_channel?: string | null;
+  follow_up_message?: string | null;
+  follow_up_status?: "Sent" | "Skipped" | "Failed" | null;
+  follow_up_sent_at?: string | null;
   created_at: string;
   updated_at?: string;
   // Multi-scenario fields
@@ -80,8 +96,24 @@ export interface MatchGroup {
   confidence?: number;
   exception_type?: string;
   exception_explanation?: string;
+  severity?: "Low" | "Medium" | "High" | null;
+  recommended_action?: string | null;
+  requires_human_review?: boolean | null;
+  suggested_execution_action?: string | null;
   human_decision?: "approved" | "rejected" | "partial" | null;
   human_decision_at?: string;
+  approval_status?: "Approved" | "Rejected" | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  review_reason?: string | null;
+  case_status?: string | null;
+  execution_action?: string | null;
+  execution_status?: "Ready" | "Executed" | "Skipped" | null;
+  execution_result?: string | null;
+  follow_up_channel?: string | null;
+  follow_up_message?: string | null;
+  follow_up_status?: "Sent" | "Skipped" | "Failed" | null;
+  follow_up_sent_at?: string | null;
   created_at?: string;
   // Enriched relations
   invoices?: Invoice[];
@@ -116,7 +148,14 @@ export interface AgentLog {
 
 export interface DecisionResponse {
   id: string;
-  human_decision: "approved" | "rejected" | "partial";
+  human_decision: "approved" | "rejected";
+  approval_status?: "Approved" | "Rejected";
+  case_status?: string;
+  execution_action?: string;
+  execution_status?: string;
+  execution_result?: string;
+  follow_up_channel?: string;
+  follow_up_status?: string;
   updated_at: string;
 }
 

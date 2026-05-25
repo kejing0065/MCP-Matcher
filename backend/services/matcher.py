@@ -18,9 +18,11 @@ from rapidfuzz import fuzz
 
 # ─── Tolerance constants ──────────────────────────────────────────────────────
 
-AMOUNT_TOLERANCE_PCT    = 2.0    # ±2% for auto-match
+AMOUNT_TOLERANCE_PCT    = 2.0    # ±2% for auto-match / acceptable FX variance
 AMOUNT_REVIEW_PCT       = 10.0   # up to ±10% goes to review
-BANK_FEE_MAX_MYR        = 100.0  # max bank fee deduction before it's flagged as something else
+BANK_FEE_MAX_MYR        = 10.0   # max bank fee deduction before it's flagged as something else
+DATE_WINDOW_DAYS        = 3      # allowed date window before late-payment review
+HIGH_CONFIDENCE_THRESHOLD = 85.0
 PARTIAL_MIN_COVERAGE    = 0.30   # at least 30% must be covered to count as "partial" not "exception"
 DUPLICATE_AMOUNT_TOL    = 0.01   # MYR tolerance to flag same amount as possible duplicate
 
@@ -476,6 +478,200 @@ def group_match(
             "confidence": round(confidence, 2),
         },
     }
+
+
+def _days_between(first_date: str, second_date: str) -> Optional[int]:
+    try:
+        first = datetime.strptime(str(first_date)[:10], "%Y-%m-%d").date()
+        second = datetime.strptime(str(second_date)[:10], "%Y-%m-%d").date()
+        return abs((first - second).days)
+    except (ValueError, TypeError):
+        return None
+
+
+def _classification(
+    exception_type: str,
+    severity: str,
+    reason: str,
+    recommended_action: str,
+    requires_human_review: bool,
+    suggested_execution_action: str,
+) -> dict:
+    return {
+        "exception_type": exception_type,
+        "severity": severity,
+        "reason": reason,
+        "recommended_action": recommended_action,
+        "requires_human_review": requires_human_review,
+        "suggested_execution_action": suggested_execution_action,
+    }
+
+
+def classify_match_exception(
+    invoices: list,
+    bank_transactions: list,
+    match: dict,
+    claimed_tx_ids: set = None,
+) -> dict:
+    """
+    Deterministic post-match exception classification.
+    This is the source of truth for financial actions; LLMs may only rephrase
+    already-computed facts outside this function.
+    """
+    if claimed_tx_ids is None:
+        claimed_tx_ids = set()
+
+    total_expected = sum((inv.get("expected_myr") or 0.0) for inv in invoices)
+    total_received = sum((tx.get("credit_amount") or 0.0) for tx in bank_transactions)
+    variance = total_received - total_expected
+    abs_variance = abs(variance)
+    variance_pct = (variance / total_expected * 100) if total_expected else 0.0
+    abs_variance_pct = abs(variance_pct)
+    confidence = float(match.get("confidence") or 0.0)
+    scenario = match.get("scenario_type")
+
+    if not invoices and bank_transactions:
+        return _classification(
+            "Unknown deposit",
+            "High",
+            "A bank deposit was found without a matching invoice candidate.",
+            "Investigate the deposit owner and request remittance details before allocation.",
+            True,
+            "INVESTIGATE_UNKNOWN_DEPOSIT",
+        )
+
+    if not bank_transactions or total_received <= 0:
+        return _classification(
+            "Missing payment",
+            "High",
+            "No bank payment was found for the invoice selection.",
+            "Request payment proof or confirm whether payment is still pending.",
+            True,
+            "REQUEST_PAYMENT_PROOF",
+        )
+
+    if scenario == "s6_duplicate" or any(detect_duplicate(tx, claimed_tx_ids) for tx in bank_transactions):
+        return _classification(
+            "Duplicate payment",
+            "High",
+            "One or more bank transactions have already been linked to another reconciliation result.",
+            "Investigate duplicate allocation before posting or clearing this payment.",
+            True,
+            "INVESTIGATE_DUPLICATE_PAYMENT",
+        )
+
+    if scenario == "s7_unmatched" or not invoices or total_expected <= 0:
+        return _classification(
+            "Unknown deposit",
+            "High",
+            "The deposit cannot be tied to a valid invoice amount.",
+            "Investigate the deposit source and keep it unreconciled until identified.",
+            True,
+            "INVESTIGATE_UNKNOWN_DEPOSIT",
+        )
+
+    partial_info = detect_partial(total_expected, total_received)
+    fee_info = detect_bank_fee(total_expected, total_received)
+
+    currencies = {str(inv.get("currency", "")).upper() for inv in invoices if inv.get("currency")}
+    if len(currencies) > 1:
+        return _classification(
+            "Wrong currency",
+            "High",
+            f"Multiple invoice currencies were included in one reconciliation group: {', '.join(sorted(currencies))}.",
+            "Review currency conversion and payment allocation manually.",
+            True,
+            "NEEDS_MANUAL_REVIEW",
+        )
+
+    first_invoice_date = _earliest_date(invoices, "invoice_date")
+    first_tx_date = _earliest_date(bank_transactions, "transaction_date")
+    days_diff = _days_between(first_invoice_date, first_tx_date)
+    if days_diff is not None and days_diff > DATE_WINDOW_DAYS:
+        return _classification(
+            "Late payment",
+            "Medium",
+            f"Payment date is {days_diff} days away from the invoice date, outside the configured {DATE_WINDOW_DAYS}-day window.",
+            "Review payment timing and confirm whether late payment handling is needed.",
+            True,
+            "NEEDS_MANUAL_REVIEW",
+        )
+
+    if variance < 0 and fee_info["is_likely_bank_fee"]:
+        return _classification(
+            "Possible bank fee deduction",
+            "Low",
+            f"Received MYR {total_received:.2f}, short by MYR {abs_variance:.2f}, within the configured RM{BANK_FEE_MAX_MYR:.0f} bank fee allowance.",
+            "Approve as an acceptable bank fee variance if supporting bank charges are expected.",
+            confidence < HIGH_CONFIDENCE_THRESHOLD,
+            "MARK_AS_ACCEPTABLE_VARIANCE",
+        )
+
+    if abs_variance_pct <= AMOUNT_TOLERANCE_PCT:
+        if confidence >= HIGH_CONFIDENCE_THRESHOLD:
+            return _classification(
+                "Possible FX variance",
+                "Low",
+                f"Variance is {abs_variance_pct:.2f}%, within the configured {AMOUNT_TOLERANCE_PCT:.0f}% FX tolerance.",
+                "Approve as acceptable variance if invoice and payment references are correct.",
+                False,
+                "MARK_AS_ACCEPTABLE_VARIANCE" if abs_variance > 0 else "MARK_AS_RECONCILED",
+            )
+        return _classification(
+            "Needs review",
+            "Medium",
+            f"Amount variance is within tolerance, but confidence is {confidence:.0f}%, below the {HIGH_CONFIDENCE_THRESHOLD:.0f}% auto-match threshold.",
+            "Review customer, reference, and date before approving.",
+            True,
+            "NEEDS_MANUAL_REVIEW",
+        )
+
+    if variance < 0:
+        if partial_info["is_partial"]:
+            return _classification(
+                "Short payment",
+                "Medium",
+                f"Received MYR {total_received:.2f} against MYR {total_expected:.2f}; MYR {partial_info['remaining_myr']:.2f} remains outstanding.",
+                "Request the remaining balance from the customer.",
+                True,
+                "REQUEST_REMAINING_BALANCE",
+            )
+        return _classification(
+            "Missing payment",
+            "High",
+            f"Received only MYR {total_received:.2f} against MYR {total_expected:.2f}, below the partial-payment coverage threshold.",
+            "Request payment proof or escalate if the customer claims payment was made.",
+            True,
+            "REQUEST_PAYMENT_PROOF",
+        )
+
+    if variance > 0:
+        return _classification(
+            "Overpayment",
+            "Medium",
+            f"Received MYR {total_received:.2f}, which is MYR {abs_variance:.2f} more than expected.",
+            "Review whether the excess relates to another invoice or should be refunded/credited.",
+            True,
+            "ESCALATE_TO_MANAGER",
+        )
+
+    return _classification(
+        "Needs review",
+        "Medium",
+        match.get("reason") or "The match did not meet deterministic auto-reconciliation rules.",
+        "Review the case manually before any accounting update.",
+        True,
+        "NEEDS_MANUAL_REVIEW",
+    )
+
+
+def classify_single_match_exception(
+    invoice: dict,
+    bank_tx: dict,
+    match: dict,
+    claimed_tx_ids: set = None,
+) -> dict:
+    return classify_match_exception([invoice] if invoice else [], [bank_tx] if bank_tx else [], match, claimed_tx_ids)
 
 
 # ─── Optimal Subset Finding (for S3 / S4) ────────────────────────────────────

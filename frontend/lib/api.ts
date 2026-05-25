@@ -23,12 +23,14 @@ export async function getDashboard(): Promise<DashboardResponse> {
 
 export async function updateDecision(
   matchResultId: string,
-  decision: "approved" | "rejected" | "partial",
+  decision: "approved" | "rejected",
+  reviewedBy = "Reviewer",
+  reviewReason = "",
 ): Promise<DecisionResponse> {
   const res = await fetch(`${API_BASE}/reconcile/results/${matchResultId}/decision`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ decision }),
+    body: JSON.stringify({ decision, reviewed_by: reviewedBy, review_reason: reviewReason }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -41,12 +43,14 @@ export async function updateDecision(
 
 export async function updateGroupDecision(
   groupId: string,
-  decision: "approved" | "rejected" | "partial",
-): Promise<{ group_id: string; decision: string; decided_at: string }> {
+  decision: "approved" | "rejected",
+  reviewedBy = "Reviewer",
+  reviewReason = "",
+): Promise<{ group_id: string; decision: string; decided_at: string; execution_action?: string; execution_status?: string; case_status?: string }> {
   const res = await fetch(`${API_BASE}/reconcile/groups/${groupId}/decision`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ decision }),
+    body: JSON.stringify({ decision, reviewed_by: reviewedBy, review_reason: reviewReason }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
