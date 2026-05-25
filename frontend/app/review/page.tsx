@@ -1,47 +1,66 @@
 "use client";
 
 import { useEffect, useState, useCallback, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { getDashboard } from "@/lib/api";
-import type { MatchResult, DashboardResponse } from "@/lib/types";
+import type { MatchResult, MatchGroup, DashboardResponse } from "@/lib/types";
 import PendingQueue from "@/components/PendingQueue";
 import CaseDetail from "@/components/CaseDetail";
+import GroupDetail from "@/components/GroupDetail";
 import Toast from "@/components/Toast";
 import { subscribeUpload, type UploadProgress } from "@/lib/uploadStore";
 
+// ─── Selector type: either single case or a group ────────────────────────────
+
+type ActiveItem =
+  | { kind: "case"; data: MatchResult }
+  | { kind: "group"; data: MatchGroup };
+
 function ReviewContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [data, setData] = useState<DashboardResponse | null>(null);
-  const [active, setActive] = useState<MatchResult | null>(null);
+  const [active, setActive] = useState<ActiveItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [upload, setUpload] = useState<UploadProgress | null>(null);
 
-  // Subscribe to background upload progress
   useEffect(() => subscribeUpload(setUpload), []);
 
-  const load = useCallback(async (selectId?: string) => {
+  const load = useCallback(async (selectId?: string, selectGroupId?: string) => {
     try {
       const d = await getDashboard();
       setData(d);
-      
-      // Update selected case
+
       setActive((prev) => {
+        // Explicit group navigation
+        if (selectGroupId && d.groups) {
+          const g = d.groups.find((g) => g.id === selectGroupId);
+          if (g) return { kind: "group", data: g };
+        }
+        // Explicit case navigation
         if (selectId) {
-          const target = d.results.find((r) => r.id === selectId);
-          if (target) return target;
+          const r = d.results.find((r) => r.id === selectId);
+          if (r) return { kind: "case", data: r };
         }
-        if (prev) {
-          const refreshed = d.results.find((r) => r.id === prev.id);
-          // Keep selection, update with refreshed content
-          if (refreshed) return refreshed;
+        // Keep existing selection refreshed
+        if (prev?.kind === "case") {
+          const refreshed = d.results.find((r) => r.id === prev.data.id);
+          if (refreshed) return { kind: "case", data: refreshed };
         }
-        
-        // Default select: first pending case (status is review/exception and no decision yet)
-        const pendingList = d.results.filter(
-          (r) => (r.status === "review" || r.status === "exception") && !r.human_decision
+        if (prev?.kind === "group" && d.groups) {
+          const refreshed = d.groups.find((g) => g.id === prev.data.id);
+          if (refreshed) return { kind: "group", data: refreshed };
+        }
+
+        // Default: first pending case (status review/exception/partial, no decision)
+        const pending = d.results.filter(
+          (r) => ["review", "exception", "partial"].includes(r.status) && !r.human_decision
         );
-        return pendingList[0] || null;
+        // Also check groups without decision
+        const pendingGroups = (d.groups ?? []).filter((g) => !g.human_decision);
+
+        if (pending.length > 0) return { kind: "case", data: pending[0] };
+        if (pendingGroups.length > 0) return { kind: "group", data: pendingGroups[0] };
+        return null;
       });
     } catch {
       /* silent */
@@ -50,38 +69,36 @@ function ReviewContent() {
     }
   }, []);
 
-  // Initial load
   useEffect(() => {
     const id = searchParams.get("id");
-    if (id) {
-      load(id);
-    } else {
-      load();
-    }
+    const gid = searchParams.get("group");
+    load(id ?? undefined, gid ?? undefined);
   }, [searchParams, load]);
 
-  // Selective polling (every 5 seconds)
+  // Selective polling when processing uploads or unclassified items
   useEffect(() => {
     const pendingList = (data?.results ?? []).filter(
-      (r) => (r.status === "review" || r.status === "exception") && !r.human_decision
+      (r) => ["review", "exception", "partial"].includes(r.status) && !r.human_decision
     );
-    
-    // Check if there are active background uploads or database processing tasks
     const hasBackgroundUpload = upload && upload.phase !== "done" && upload.phase !== "error";
     const hasProcessing = pendingList.some((r) => !r.exception_explanation);
 
     if (hasBackgroundUpload || hasProcessing) {
-      const iv = setInterval(() => {
-        load();
-      }, 5000);
+      const iv = setInterval(() => load(), 5000);
       return () => clearInterval(iv);
     }
   }, [data, upload, load]);
 
-  // Auto-refresh when background upload finishes
+  // Auto-refresh when upload finishes
   useEffect(() => {
-    if (upload?.phase === "done" && upload.matchResultId) {
-      load(upload.matchResultId);
+    if (upload?.phase === "done") {
+      if (upload.groupId) {
+        load(undefined, upload.groupId);
+      } else if (upload.matchResultId) {
+        load(upload.matchResultId);
+      } else {
+        load();
+      }
     }
   }, [upload, load]);
 
@@ -96,37 +113,47 @@ function ReviewContent() {
     );
   }
 
-  // Filter queues
+  // Separate pending single-results and pending groups
   const pending = (data?.results ?? []).filter(
-    (r) => (r.status === "review" || r.status === "exception") && !r.human_decision
+    (r) => ["review", "exception", "partial"].includes(r.status) && !r.human_decision
   );
-  
-  // Sort by created_at descending (newest first)
   pending.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-  // Filter auto-matched today (status is matched, no human decision, created today)
+  const pendingGroups = (data?.groups ?? []).filter((g) => !g.human_decision);
+
   const todayStr = new Date().toISOString().split("T")[0];
   const autoMatched = (data?.results ?? []).filter((r) => {
-    const isToday = r.created_at && r.created_at.startsWith(todayStr);
+    const isToday = r.created_at?.startsWith(todayStr);
     return r.status === "matched" && !r.human_decision && isToday;
   });
+
+  const activeResultId = active?.kind === "case" ? active.data.id : undefined;
+  const activeGroupId = active?.kind === "group" ? active.data.id : undefined;
 
   return (
     <div className="min-h-[calc(100vh-56px)] bg-[#0d1117] px-6 py-6">
       <div className="max-w-6xl mx-auto flex gap-[14px] items-start">
-        {/* Left Column (260px Pending list + Auto-matched today) */}
+        {/* Left Column */}
         <PendingQueue
           pending={pending}
-          active={active}
-          onSelect={setActive}
+          pendingGroups={pendingGroups}
+          activeResultId={activeResultId}
+          activeGroupId={activeGroupId}
+          onSelectCase={(r) => setActive({ kind: "case", data: r })}
+          onSelectGroup={(g) => setActive({ kind: "group", data: g })}
           autoMatched={autoMatched}
           upload={upload}
+          // Legacy props for compatibility
+          active={active?.kind === "case" ? active.data : null}
+          onSelect={(r) => setActive({ kind: "case", data: r })}
         />
 
-        {/* Right Column (Flex-1 Detailed View Card) */}
+        {/* Right Column */}
         <main className="flex-1 min-w-0">
-          {active ? (
-            <CaseDetail key={active.id} result={active} onDecision={load} />
+          {active?.kind === "case" ? (
+            <CaseDetail key={active.data.id} result={active.data} onDecision={load} />
+          ) : active?.kind === "group" ? (
+            <GroupDetail key={active.data.id} group={active.data} onDecision={load} />
           ) : (
             <div className="flex flex-col items-center justify-center py-20 rounded-lg border border-[#30363d] bg-[#161b22] text-center select-none shadow-sm">
               <span className="text-3xl mb-3 text-neutral-500">✓</span>

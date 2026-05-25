@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { getDashboard } from "@/lib/api";
-import type { MatchResult, DashboardResponse } from "@/lib/types";
+import type { MatchResult, MatchGroup, DashboardResponse } from "@/lib/types";
 import Toast from "@/components/Toast";
 import HistoryTable from "@/components/HistoryTable";
+import { SCENARIO_LABELS } from "@/lib/types";
 
-type Tab = "all" | "approved" | "rejected";
+type Tab = "all" | "approved" | "rejected" | "partial";
 
 export default function HistoryPage() {
   const [data, setData] = useState<DashboardResponse | null>(null);
@@ -33,6 +34,7 @@ export default function HistoryPage() {
   const decided = (data?.results ?? []).filter((r) => r.human_decision != null);
   const approved = decided.filter((r) => r.human_decision === "approved");
   const rejected = decided.filter((r) => r.human_decision === "rejected");
+  const partial = decided.filter((r) => r.human_decision === "partial");
 
   const exportCSV = () => {
     if (!decided.length) return;
@@ -42,6 +44,7 @@ export default function HistoryPage() {
       "Amount",
       "Currency",
       "Variance MYR",
+      "Scenario",
       "Decision",
       "Date",
     ];
@@ -51,6 +54,7 @@ export default function HistoryPage() {
       r.invoice?.amount?.toFixed(2) ?? "—",
       r.invoice?.currency ?? "—",
       r.variance?.toFixed(2) ?? "—",
+      SCENARIO_LABELS[r.scenario_type ?? ""] ?? "Standard",
       r.human_decision ?? "—",
       (r.human_decision_at || r.created_at) ?? "—",
     ]);
@@ -103,6 +107,7 @@ export default function HistoryPage() {
             { id: "all", label: "All", count: decided.length },
             { id: "approved", label: "Approved", count: approved.length },
             { id: "rejected", label: "Rejected", count: rejected.length },
+            { id: "partial", label: "Partial", count: partial.length },
           ] as { id: Tab; label: string; count: number }[]).map((t) => (
             <button
               key={t.id}

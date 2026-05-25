@@ -4,7 +4,7 @@ import type { AgentLog } from "@/lib/types";
 
 interface AuditTrailProps {
   logs: AgentLog[];
-  humanDecision?: "approved" | "rejected" | null;
+  humanDecision?: "approved" | "rejected" | "partial" | null;
   variance?: number;
   decidedAt?: string;
 }

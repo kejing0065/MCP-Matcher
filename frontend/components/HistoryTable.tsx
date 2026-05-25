@@ -4,10 +4,11 @@ import React, { useState, useEffect } from "react";
 import type { MatchResult, AgentLog } from "@/lib/types";
 import { getAgentLogs } from "@/lib/api";
 import AuditTrail from "./AuditTrail";
+import ScenarioBadge from "./ScenarioBadge";
 
 interface HistoryTableProps {
   results: MatchResult[];
-  activeTab: "all" | "approved" | "rejected";
+  activeTab: "all" | "approved" | "rejected" | "partial";
 }
 
 function timeAgo(ds?: string) {
@@ -27,7 +28,7 @@ function HistoryAuditLogs({
   decidedAt,
 }: {
   matchResultId: string;
-  humanDecision?: "approved" | "rejected" | null;
+  humanDecision?: "approved" | "rejected" | "partial" | null;
   variance?: number;
   decidedAt?: string;
 }) {
@@ -79,6 +80,7 @@ export default function HistoryTable({ results, activeTab }: HistoryTableProps) 
   const filtered = results.filter((r) => {
     if (activeTab === "approved") return r.human_decision === "approved";
     if (activeTab === "rejected") return r.human_decision === "rejected";
+    if (activeTab === "partial") return r.human_decision === "partial";
     return r.human_decision != null;
   });
 
@@ -99,6 +101,7 @@ export default function HistoryTable({ results, activeTab }: HistoryTableProps) 
         <div className="w-20 shrink-0 text-left">Invoice</div>
         <div className="flex-1 text-left">Customer</div>
         <div className="w-[90px] shrink-0 text-right">Amount</div>
+        <div className="w-[90px] shrink-0 text-center">Scenario</div>
         <div className="w-20 shrink-0 text-right">Variance</div>
         <div className="w-[80px] shrink-0 text-center">Decision</div>
         <div className="w-20 shrink-0 text-right">Decided</div>
@@ -137,6 +140,11 @@ export default function HistoryTable({ results, activeTab }: HistoryTableProps) 
                   {invoice?.currency} {invoice?.amount?.toFixed(0)}
                 </div>
 
+                {/* Scenario Badge */}
+                <div className="w-[90px] shrink-0 flex justify-center">
+                  <ScenarioBadge scenarioType={result.scenario_type} size="xs" />
+                </div>
+
                 {/* Variance */}
                 <div
                   className={`w-20 shrink-0 font-mono text-[12px] text-right font-bold ${
@@ -150,12 +158,16 @@ export default function HistoryTable({ results, activeTab }: HistoryTableProps) 
                 <div className="w-[80px] shrink-0 flex justify-center">
                   <span
                     className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold border inline-block ${
-                      ok
-                        ? "text-green-500 bg-green-950/40 border-green-800/40 border-green-500/20"
-                        : "text-red-500 bg-red-950/40 border-red-800/40 border-red-500/20"
+                      result.human_decision === "approved"
+                        ? "text-green-500 bg-green-950/40 border-green-800/40"
+                        : result.human_decision === "partial"
+                        ? "text-amber-500 bg-amber-950/40 border-amber-800/40"
+                        : "text-red-500 bg-red-950/40 border-red-800/40"
                     }`}
                   >
-                    {ok ? "✓ Approved" : "✕ Rejected"}
+                    {result.human_decision === "approved" ? "✓ Approved"
+                      : result.human_decision === "partial" ? "◑ Partial"
+                      : "✕ Rejected"}
                   </span>
                 </div>
 

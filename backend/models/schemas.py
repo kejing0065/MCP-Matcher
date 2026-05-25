@@ -1,9 +1,8 @@
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import date
 
 
-# ─── Tool 1: Extract Document ────────────────────────────────────────────────
+# ─── Tool 1: Extract Document ─────────────────────────────────────────────────
 
 class ExtractedInvoice(BaseModel):
     id: str
@@ -16,7 +15,7 @@ class ExtractedInvoice(BaseModel):
     payment_reference: Optional[str] = None
 
 
-# ─── Tool 2: Bank CSV ─────────────────────────────────────────────────────────
+# ─── Tool 2: Bank CSV ──────────────────────────────────────────────────────────
 
 class BankTransaction(BaseModel):
     id: str
@@ -30,7 +29,7 @@ class ParseBankCSVResponse(BaseModel):
     count: int
 
 
-# ─── Tool 3: Convert Currency ─────────────────────────────────────────────────
+# ─── Tool 3: Convert Currency ──────────────────────────────────────────────────
 
 class ConvertCurrencyRequest(BaseModel):
     amount: float
@@ -50,7 +49,7 @@ class ConvertCurrencyResponse(BaseModel):
     tolerance_max: float
 
 
-# ─── Tool 4: Parse Bank Description ──────────────────────────────────────────
+# ─── Tool 4: Parse Bank Description ───────────────────────────────────────────
 
 class ParseDescriptionRequest(BaseModel):
     description: str
@@ -81,7 +80,7 @@ class MatchResponse(BaseModel):
     invoice_id: str
     bank_transaction_id: str
     confidence: float
-    status: str  # matched | review | exception
+    status: str  # matched | review | exception | partial
     variance: float
     variance_pct: float
     score_breakdown: ScoreBreakdown
@@ -99,7 +98,7 @@ class ClassifyExceptionResponse(BaseModel):
     exception_explanation: str
 
 
-# ─── Reconcile ────────────────────────────────────────────────────────────────
+# ─── Single-Entity Reconcile ──────────────────────────────────────────────────
 
 class ReconcileRequest(BaseModel):
     invoice_id: str
@@ -121,10 +120,49 @@ class ReconcileResponse(BaseModel):
     score_breakdown: Optional[ScoreBreakdown] = None
 
 
+# ─── Multi-Entity Reconcile (NEW) ─────────────────────────────────────────────
+
+class MultiReconcileRequest(BaseModel):
+    """
+    Multi-scenario reconciliation request.
+    Supports all scenarios:
+      - S1: 1 invoice_id + 1 bank_transaction_id
+      - S2: 1 invoice_id + multiple bank_transaction_ids (split payment)
+      - S3: multiple invoice_ids + 1 bank_transaction_id (consolidated)
+      - S4: multiple invoice_ids + multiple bank_transaction_ids (complex)
+    """
+    invoice_ids: List[str]
+    bank_transaction_ids: List[str]
+
+
+class MatchGroupResponse(BaseModel):
+    """Response for a multi-entity match group."""
+    group_id: str
+    scenario_type: str
+    invoice_ids: List[str]
+    bank_transaction_ids: List[str]
+    total_expected_myr: float
+    total_received_myr: float
+    total_variance_myr: float
+    coverage_pct: float
+    status: str  # matched | review | exception | partial
+    confidence: float
+    is_partial: bool
+    remaining_amount_myr: float
+    exception_type: Optional[str] = None
+    exception_explanation: Optional[str] = None
+    human_decision: Optional[str] = None
+    match_result_ids: List[str]
+
+
 # ─── Human Decision ───────────────────────────────────────────────────────────
 
 class DecisionRequest(BaseModel):
-    decision: str  # "approved" | "rejected"
+    decision: str  # "approved" | "rejected" | "partial"
+
+
+class GroupDecisionRequest(BaseModel):
+    decision: str  # "approved" | "rejected" | "partial"
 
 
 # ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -134,6 +172,8 @@ class DashboardStats(BaseModel):
     auto_matched: int
     needs_review: int
     exceptions: int
+    partial_payments: int
+    duplicates: int
     total_variance_myr: float
 
 
@@ -149,11 +189,43 @@ class MatchResultDetail(BaseModel):
     exception_type: Optional[str] = None
     exception_explanation: Optional[str] = None
     human_decision: Optional[str] = None
+    human_decision_at: Optional[str] = None
     created_at: Optional[str] = None
+    # Multi-scenario fields
+    scenario_type: Optional[str] = None
+    match_group_id: Optional[str] = None
+    paid_amount_myr: Optional[float] = None
+    remaining_amount_myr: Optional[float] = None
+    is_partial: Optional[bool] = None
+    # Enriched relations
     invoice: Optional[dict] = None
     bank_transaction: Optional[dict] = None
+    score_breakdown: Optional[ScoreBreakdown] = None
+
+
+class MatchGroupDetail(BaseModel):
+    id: str
+    scenario_type: str
+    invoice_ids: Optional[List[str]] = None
+    bank_transaction_ids: Optional[List[str]] = None
+    total_expected_myr: Optional[float] = None
+    total_received_myr: Optional[float] = None
+    total_variance_myr: Optional[float] = None
+    coverage_pct: Optional[float] = None
+    status: Optional[str] = None
+    confidence: Optional[float] = None
+    exception_type: Optional[str] = None
+    exception_explanation: Optional[str] = None
+    human_decision: Optional[str] = None
+    human_decision_at: Optional[str] = None
+    created_at: Optional[str] = None
+    # Enriched relations
+    invoices: Optional[List[dict]] = None
+    bank_transactions: Optional[List[dict]] = None
+    match_results: Optional[List[dict]] = None
 
 
 class DashboardResponse(BaseModel):
     stats: DashboardStats
     results: List[MatchResultDetail]
+    groups: Optional[List[MatchGroupDetail]] = None
