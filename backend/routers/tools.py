@@ -288,15 +288,19 @@ async def classify_exception(req: ClassifyExceptionRequest):
     invoice = invoice_result.data[0]
     bank_tx = tx_result.data[0]
 
-    try:
-        classification = await chutes.classify_exception(invoice, bank_tx, match)
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Chutes API error: {e}")
+    classification = matcher.classify_single_match_exception(invoice, bank_tx, match)
 
     # Update match_results row
     db.table("match_results").update({
         "exception_type": classification["exception_type"],
-        "exception_explanation": classification["exception_explanation"],
+        "exception_explanation": classification["reason"],
+        "severity": classification["severity"],
+        "recommended_action": classification["recommended_action"],
+        "requires_human_review": classification["requires_human_review"],
+        "suggested_execution_action": classification["suggested_execution_action"],
     }).eq("id", req.match_result_id).execute()
 
-    return classification
+    return {
+        "exception_type": classification["exception_type"],
+        "exception_explanation": classification["reason"],
+    }

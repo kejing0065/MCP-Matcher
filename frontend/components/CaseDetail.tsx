@@ -13,258 +13,189 @@ interface CaseDetailProps {
 }
 
 function getConfColors(score: number) {
-  if (score >= 85) return { text: "text-green-500", bg: "bg-green-950/40 border-green-800/40", border: "border-green-500/20" };
-  if (score >= 60) return { text: "text-amber-500", bg: "bg-amber-950/40 border-amber-800/40", border: "border-amber-500/20" };
-  return { text: "text-red-500", bg: "bg-red-950/40 border-red-800/40", border: "border-red-500/20" };
+  if (score >= 85) return "text-green-500 bg-green-950/40 border-green-800/40";
+  if (score >= 60) return "text-amber-500 bg-amber-950/40 border-amber-800/40";
+  return "text-red-500 bg-red-950/40 border-red-800/40";
+}
+
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex justify-between items-baseline py-2.5 text-[12px] border-b border-[#21262d]/50 last:border-b-0">
+      <span className="text-neutral-500 shrink-0">{label}</span>
+      <span className="text-neutral-200 font-semibold text-right max-w-[62%] break-words">{value ?? "-"}</span>
+    </div>
+  );
+}
+
+function InfoGrid({ result }: { result: MatchResult }) {
+  const items: [string, React.ReactNode, boolean?][] = [
+    ["Exception type", result.exception_type],
+    ["Severity", result.severity],
+    ["Reason", result.exception_explanation || result.reason, true],
+    ["Recommended action", result.recommended_action, true],
+    ["Suggested execution", result.suggested_execution_action],
+    ["Human review", result.requires_human_review ? "Required" : "Not required"],
+    ["Approval status", result.approval_status],
+    ["Reviewed by", result.reviewed_by],
+    ["Reviewed at", result.reviewed_at ?? result.human_decision_at],
+    ["Execution action", result.execution_action],
+    ["Execution status", result.execution_status],
+    ["Execution result", result.execution_result, true],
+    ["Follow-up channel", result.follow_up_channel],
+    ["Follow-up status", result.follow_up_status],
+    ["Follow-up sent at", result.follow_up_sent_at],
+    ["Follow-up message", result.follow_up_message, true],
+  ];
+
+  return (
+    <div className="rounded-md p-3.5 bg-[#0d1117] border border-[#30363d] grid grid-cols-2 gap-x-5 gap-y-3">
+      {items.map(([label, value, wide]) => (
+        <div key={label} className={wide ? "col-span-2" : ""}>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">{label}</p>
+          <p className="text-[12px] text-neutral-200 mt-1 leading-relaxed">{value ?? "-"}</p>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function CaseDetail({ result, onDecision }: CaseDetailProps) {
   const [busy, setBusy] = useState(false);
-  const [btnLoading, setBtnLoading] = useState<"approved" | "rejected" | "partial" | null>(null);
+  const [btnLoading, setBtnLoading] = useState<"approved" | "rejected" | null>(null);
+  const [reviewedBy, setReviewedBy] = useState(result.reviewed_by ?? "");
+  const [reviewReason, setReviewReason] = useState(result.review_reason ?? "");
 
   const inv = result.invoice;
   const tx = result.bank_transaction;
-  const variance = result.variance ?? 0;
   const confidence = result.confidence ?? 0;
-
+  const variance = result.variance ?? 0;
   const tolerance = (inv?.expected_myr ?? 0) * 0.02;
   const rangeMin = (inv?.expected_myr ?? 0) - tolerance;
   const rangeMax = (inv?.expected_myr ?? 0) + tolerance;
 
-  const decide = async (d: "approved" | "rejected" | "partial") => {
+  const decide = async (decision: "approved" | "rejected") => {
     setBusy(true);
-    setBtnLoading(d);
+    setBtnLoading(decision);
     try {
-      await updateDecision(result.id, d);
+      await updateDecision(result.id, decision, reviewedBy || "Reviewer", reviewReason);
       showToast({
-        type: d === "approved" ? "success" : d === "partial" ? "info" : "error",
-        message: d === "approved" ? "Case approved" : d === "partial" ? "Marked as partial — awaiting settlement" : "Case rejected",
+        type: decision === "approved" ? "success" : "error",
+        message: decision === "approved" ? "Case approved and execution updated" : "Case rejected and execution skipped",
       });
       onDecision();
     } catch {
-      showToast({ type: "error", message: "Error — please try again" });
+      showToast({ type: "error", message: "Error saving decision" });
     } finally {
       setBusy(false);
       setBtnLoading(null);
     }
   };
 
-  const maskText = (s?: string) =>
-    s ? s.replace(/\b\d{10,16}\b/g, "••••••••••") : "—";
-
-  const confTheme = getConfColors(confidence);
-  const isProcessing = result.status === "review" && !result.exception_explanation;
+  const maskText = (s?: string) => s ? s.replace(/\b\d{10,16}\b/g, "**********") : "-";
   const isPartial = result.status === "partial" || result.is_partial;
   const isDuplicate = result.scenario_type === "s6_duplicate";
 
   return (
     <div className="flex flex-col gap-4 p-5 rounded-lg border border-[#30363d] bg-[#161b22] text-left animate-fade-up text-[13px]">
-      {/* ─── HEADER ROW ─── */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-[15px] font-semibold text-white tracking-tight">
-              {inv?.invoice_no ?? "INV-????"}
-            </h2>
+            <h2 className="text-[15px] font-semibold text-white tracking-tight">{inv?.invoice_no ?? "INV-????"}</h2>
             {result.scenario_type && <ScenarioBadge scenarioType={result.scenario_type} />}
           </div>
-          <p className="text-[12px] text-neutral-400 mt-0.5">
-            {inv?.customer ?? "Unknown"} · {inv?.invoice_date ?? "—"}
-          </p>
+          <p className="text-[12px] text-neutral-400 mt-0.5">{inv?.customer ?? "Unknown"} / {inv?.invoice_date ?? "-"}</p>
         </div>
-        <span className={`px-2.5 py-0.5 rounded-full text-[13px] font-bold font-mono border ${confTheme.text} ${confTheme.bg} ${confTheme.border} shrink-0`}>
+        <span className={`px-2.5 py-0.5 rounded-full text-[13px] font-bold font-mono border ${getConfColors(confidence)} shrink-0`}>
           {Math.round(confidence)}% conf
         </span>
       </div>
 
-      {/* ─── DUPLICATE WARNING ─── */}
       {isDuplicate && (
-        <div className="rounded-md p-2.5 bg-red-950/30 border border-red-800/50 flex items-start gap-2">
-          <span className="text-red-500 shrink-0">⊘</span>
-          <p className="text-[11px] text-red-300 font-medium">
-            <span className="font-bold text-red-400">Possible Duplicate: </span>
-            This transaction may already be claimed by another invoice. Verify before approving.
-          </p>
+        <div className="rounded-md p-2.5 bg-red-950/30 border border-red-800/50 text-[11px] text-red-300 font-medium">
+          <span className="font-bold text-red-400">Possible Duplicate: </span>
+          This transaction may already be claimed by another invoice. Verify before approving.
         </div>
       )}
 
-      {/* ─── PARTIAL PAYMENT WARNING ─── */}
       {isPartial && (
-        <div className="rounded-md p-2.5 bg-amber-950/30 border border-amber-800/50 flex items-start gap-2">
-          <span className="text-amber-500 shrink-0">◑</span>
-          <div>
-            <p className="text-[11px] font-bold text-amber-400">Partial Payment — Awaiting Settlement</p>
-            <p className="text-[11px] text-amber-300/80 mt-0.5">
-              Outstanding: <span className="font-mono font-bold">MYR {(result.remaining_amount_myr ?? 0).toFixed(2)}</span>
-            </p>
-          </div>
+        <div className="rounded-md p-2.5 bg-amber-950/30 border border-amber-800/50 text-[11px] text-amber-300">
+          <span className="font-bold text-amber-400">Partial Payment: </span>
+          Outstanding MYR {(result.remaining_amount_myr ?? 0).toFixed(2)}
         </div>
       )}
 
-      {/* ─── SECTION 1: COMPARISON GRID ─── */}
       <div className="grid grid-cols-2 gap-[14px]">
-        {/* Invoice Column */}
-        <div className="p-3.5 rounded-md border border-[#30363d] bg-[#0d1117] flex flex-col gap-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
-            📄 Invoice
-          </p>
-          <div className="flex flex-col">
-            {([
-              ["Customer", inv?.customer],
-              ["Amount", inv?.amount != null ? `${inv.currency} ${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "—"],
-              ["Expected MYR", <span key="expected" className="text-blue-500 font-bold">MYR {inv?.expected_myr?.toLocaleString(undefined, { minimumFractionDigits: 2 }) ?? "—"}</span>],
-              ["Invoice date", inv?.invoice_date],
-              ["Reference", inv?.payment_reference ?? inv?.invoice_no],
-            ] as [string, React.ReactNode][]).map(([k, v], idx, arr) => (
-              <div
-                key={k}
-                className={`flex justify-between items-baseline py-2.5 text-[12px] ${
-                  idx === arr.length - 1 ? "" : "border-b border-[#21262d]/50"
-                }`}
-              >
-                <span className="text-neutral-500 shrink-0">{k}</span>
-                <span className="text-neutral-200 font-semibold text-right max-w-[62%] truncate">{v ?? "—"}</span>
-              </div>
-            ))}
-          </div>
+        <div className="p-3.5 rounded-md border border-[#30363d] bg-[#0d1117]">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">Invoice</p>
+          <Field label="Customer" value={inv?.customer} />
+          <Field label="Amount" value={inv?.amount != null ? `${inv.currency} ${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "-"} />
+          <Field label="Expected MYR" value={<span className="text-blue-500 font-bold">MYR {inv?.expected_myr?.toLocaleString(undefined, { minimumFractionDigits: 2 }) ?? "-"}</span>} />
+          <Field label="Invoice date" value={inv?.invoice_date} />
+          <Field label="Reference" value={inv?.payment_reference ?? inv?.invoice_no} />
         </div>
 
-        {/* Bank Transaction Column */}
-        <div className="p-3.5 rounded-md border border-[#30363d] bg-[#0d1117] flex flex-col gap-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
-            🏦 Bank Transaction
-          </p>
-          <div className="flex flex-col">
-            {([
-              ["Description", <span key="desc" className="text-[11px] leading-tight break-all font-mono">{maskText(tx?.description)}</span>],
-              ["Parsed customer", tx?.parsed_customer || "—"],
-              ["Received MYR", <span key="received" className="text-green-500 font-bold">MYR {tx?.credit_amount?.toLocaleString(undefined, { minimumFractionDigits: 2 }) ?? "—"}</span>],
-              ["Transaction date", tx?.transaction_date],
-              ["Variance", <span key="variance" className={`font-bold ${variance >= 0 ? "text-green-500" : "text-red-500"}`}>{variance >= 0 ? "+" : ""}MYR {variance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>],
-            ] as [string, React.ReactNode][]).map(([k, v], idx, arr) => (
-              <div
-                key={k}
-                className={`flex justify-between items-baseline py-2.5 text-[12px] ${
-                  idx === arr.length - 1 ? "" : "border-b border-[#21262d]/50"
-                }`}
-              >
-                <span className="text-neutral-500 shrink-0">{k}</span>
-                <span className="text-neutral-200 font-semibold text-right max-w-[62%] truncate">{v ?? "—"}</span>
-              </div>
-            ))}
-          </div>
+        <div className="p-3.5 rounded-md border border-[#30363d] bg-[#0d1117]">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">Bank Transaction</p>
+          <Field label="Description" value={<span className="text-[11px] leading-tight break-all font-mono">{maskText(tx?.description)}</span>} />
+          <Field label="Parsed customer" value={tx?.parsed_customer || "-"} />
+          <Field label="Received MYR" value={<span className="text-green-500 font-bold">MYR {tx?.credit_amount?.toLocaleString(undefined, { minimumFractionDigits: 2 }) ?? "-"}</span>} />
+          <Field label="Transaction date" value={tx?.transaction_date} />
+          <Field label="Variance" value={<span className={`font-bold ${variance >= 0 ? "text-green-500" : "text-red-500"}`}>{variance >= 0 ? "+" : ""}MYR {variance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>} />
         </div>
       </div>
 
-      {/* ─── SECTION 2: FX CALCULATION BOX ─── */}
       {inv?.fx_rate && (
-        <div className="rounded-md p-3.5 bg-blue-950/20 border border-blue-900/50 flex flex-col gap-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
-            💵 FX calculation — rate from {inv.fx_date ?? inv.invoice_date}
-          </p>
-          <div className="flex flex-wrap items-center gap-2 font-mono">
-            <span className="px-2 py-0.5 rounded-md bg-white border border-neutral-300 text-[12px] font-bold text-neutral-900">
-              {inv.currency} {inv.amount?.toFixed(0)}
-            </span>
-            <span className="text-neutral-500 text-[12px] font-bold">×</span>
-            <span className="px-2 py-0.5 rounded-md bg-white border border-neutral-300 text-[12px] font-bold text-neutral-900">
-              {inv.fx_rate.toFixed(4)}
-            </span>
-            <span className="text-neutral-500 text-[12px] font-bold">=</span>
-            <span className="px-2 py-0.5 rounded-md bg-white border border-neutral-300 text-[12px] font-bold text-neutral-900">
-              MYR {inv.expected_myr?.toFixed(2)}
-            </span>
-            <span className="text-neutral-500 text-[12px] font-semibold">±2%</span>
-            <span className="px-2 py-0.5 rounded-md bg-white border border-neutral-300 text-[12px] font-bold text-neutral-900">
-              {rangeMin.toFixed(2)} – {rangeMax.toFixed(2)}
-            </span>
+        <div className="rounded-md p-3.5 bg-blue-950/20 border border-blue-900/50">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-blue-400 mb-2">FX calculation</p>
+          <div className="flex flex-wrap items-center gap-2 font-mono text-[12px] text-neutral-200">
+            <span>{inv.currency} {inv.amount?.toFixed(0)}</span>
+            <span>x</span>
+            <span>{inv.fx_rate.toFixed(4)}</span>
+            <span>=</span>
+            <span>MYR {inv.expected_myr?.toFixed(2)}</span>
+            <span>+/-2%</span>
+            <span>{rangeMin.toFixed(2)} - {rangeMax.toFixed(2)}</span>
           </div>
         </div>
       )}
 
-      {/* ─── SECTION 3: CONFIDENCE BREAKDOWN ─── */}
       {result.score_breakdown && (
         <div className="border-t border-[#21262d]/50 pt-3">
           <ConfidenceBreakdown breakdown={result.score_breakdown} />
         </div>
       )}
 
-      {/* ─── SECTION 4: AGENT EXPLANATION BOX ─── */}
-      <div className="rounded-md p-3.5 bg-amber-950/20 border border-amber-900/50 flex flex-col gap-2.5">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 flex items-center gap-1.5">
-          🤖 Agent explanation
-        </p>
+      <InfoGrid result={result} />
 
-        {isProcessing ? (
-          <div className="flex flex-col gap-2 py-1.5 animate-pulse">
-            <div className="h-3.5 bg-[#30363d]/50 rounded-md w-[90%]" />
-            <div className="h-3.5 bg-[#30363d]/50 rounded-md w-[70%]" />
-          </div>
-        ) : (
-          <p className="text-[12px] leading-relaxed text-neutral-300">
-            {result.exception_explanation || result.reason || "Reconciliation matched successfully with high confidence."}
-          </p>
-        )}
-      </div>
-
-      {/* ─── SECTION 5: ACTION BUTTONS ─── */}
       <div className="border-t border-[#21262d]/50 pt-4">
         {!result.human_decision ? (
-          <div className="flex gap-2">
-            {/* Approve Button */}
-            <button
-              disabled={busy}
-              onClick={() => decide("approved")}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-[13px] font-semibold bg-green-600 hover:bg-green-500 text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {btnLoading === "approved" ? (
-                <><span className="w-3.5 h-3.5 border-2 border-neutral-700 border-t-white rounded-full animate-spin" /> Approving...</>
-              ) : (
-                <><span>✓</span> Approve</>
-              )}
-            </button>
-
-            {/* Partial Button (shown for partial or review cases) */}
-            {(isPartial || result.status === "review") && (
-              <button
-                disabled={busy}
-                onClick={() => decide("partial")}
-                title="Mark as partial payment — awaiting settlement"
-                className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-[13px] font-semibold bg-amber-700 hover:bg-amber-600 text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {btnLoading === "partial" ? (
-                  <span className="w-3.5 h-3.5 border-2 border-neutral-700 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <><span>◑</span> Partial</>
-                )}
+          <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1.5 text-[11px] font-semibold text-neutral-400">
+                Reviewer
+                <input value={reviewedBy} onChange={(e) => setReviewedBy(e.target.value)} placeholder="Your name" className="rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500" />
+              </label>
+              <label className="flex flex-col gap-1.5 text-[11px] font-semibold text-neutral-400">
+                Review reason
+                <input value={reviewReason} onChange={(e) => setReviewReason(e.target.value)} placeholder="Why approve or reject?" className="rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500" />
+              </label>
+            </div>
+            <div className="flex gap-2">
+              <button disabled={busy} onClick={() => decide("approved")} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-[13px] font-semibold bg-green-600 hover:bg-green-500 text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                {btnLoading === "approved" ? "Approving..." : "Approve"}
               </button>
-            )}
-
-            {/* Reject Button */}
-            <button
-              disabled={busy}
-              onClick={() => decide("rejected")}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-[13px] font-semibold bg-red-600 hover:bg-red-500 text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {btnLoading === "rejected" ? (
-                <><span className="w-3.5 h-3.5 border-2 border-neutral-700 border-t-white rounded-full animate-spin" /> Rejecting...</>
-              ) : (
-                <><span>✕</span> Reject</>
-              )}
-            </button>
+              <button disabled={busy} onClick={() => decide("rejected")} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-[13px] font-semibold bg-red-600 hover:bg-red-500 text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                {btnLoading === "rejected" ? "Rejecting..." : "Reject"}
+              </button>
+            </div>
           </div>
         ) : (
-          /* Decided State Banner */
           <div className={`rounded-lg py-2.5 text-center text-[13px] font-bold border ${
             result.human_decision === "approved"
               ? "bg-green-950/20 border-green-800/40 text-green-500"
-              : result.human_decision === "partial"
-              ? "bg-amber-950/20 border-amber-800/40 text-amber-500"
               : "bg-red-950/20 border-red-800/40 text-red-500"
           }`}>
-            {result.human_decision === "approved" ? "✓ Approved Case"
-              : result.human_decision === "partial" ? "◑ Partial — Awaiting Settlement"
-              : "✕ Rejected / Flagged"}
+            {result.human_decision === "approved" ? "Approved Case" : "Rejected / Flagged"}
           </div>
         )}
       </div>

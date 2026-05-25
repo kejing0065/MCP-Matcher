@@ -159,10 +159,14 @@ class MatchGroupResponse(BaseModel):
 
 class DecisionRequest(BaseModel):
     decision: str  # "approved" | "rejected" | "partial"
+    reviewed_by: Optional[str] = None
+    review_reason: Optional[str] = None
 
 
 class GroupDecisionRequest(BaseModel):
     decision: str  # "approved" | "rejected" | "partial"
+    reviewed_by: Optional[str] = None
+    review_reason: Optional[str] = None
 
 
 # ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -188,8 +192,24 @@ class MatchResultDetail(BaseModel):
     reason: Optional[str] = None
     exception_type: Optional[str] = None
     exception_explanation: Optional[str] = None
+    severity: Optional[str] = None
+    recommended_action: Optional[str] = None
+    requires_human_review: Optional[bool] = None
+    suggested_execution_action: Optional[str] = None
     human_decision: Optional[str] = None
     human_decision_at: Optional[str] = None
+    approval_status: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[str] = None
+    review_reason: Optional[str] = None
+    case_status: Optional[str] = None
+    execution_action: Optional[str] = None
+    execution_status: Optional[str] = None
+    execution_result: Optional[str] = None
+    follow_up_channel: Optional[str] = None
+    follow_up_message: Optional[str] = None
+    follow_up_status: Optional[str] = None
+    follow_up_sent_at: Optional[str] = None
     created_at: Optional[str] = None
     # Multi-scenario fields
     scenario_type: Optional[str] = None
@@ -216,8 +236,24 @@ class MatchGroupDetail(BaseModel):
     confidence: Optional[float] = None
     exception_type: Optional[str] = None
     exception_explanation: Optional[str] = None
+    severity: Optional[str] = None
+    recommended_action: Optional[str] = None
+    requires_human_review: Optional[bool] = None
+    suggested_execution_action: Optional[str] = None
     human_decision: Optional[str] = None
     human_decision_at: Optional[str] = None
+    approval_status: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[str] = None
+    review_reason: Optional[str] = None
+    case_status: Optional[str] = None
+    execution_action: Optional[str] = None
+    execution_status: Optional[str] = None
+    execution_result: Optional[str] = None
+    follow_up_channel: Optional[str] = None
+    follow_up_message: Optional[str] = None
+    follow_up_status: Optional[str] = None
+    follow_up_sent_at: Optional[str] = None
     created_at: Optional[str] = None
     # Enriched relations
     invoices: Optional[List[dict]] = None

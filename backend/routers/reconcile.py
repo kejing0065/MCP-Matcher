@@ -20,7 +20,7 @@ from models.schemas import (
     DecisionRequest,
     GroupDecisionRequest,
 )
-from services import fx, chutes, matcher
+from services import fx, chutes, matcher, followup
 
 router = APIRouter()
 
@@ -42,6 +42,118 @@ def _get_claimed_tx_ids(db) -> set:
     """Fetch all bank_transaction_ids already used in match_results."""
     res = db.table("match_results").select("bank_transaction_id").execute()
     return {str(r["bank_transaction_id"]) for r in (res.data or []) if r.get("bank_transaction_id")}
+
+
+def _classification_fields(classification: dict) -> dict:
+    return {
+        "exception_type": classification["exception_type"],
+        "exception_explanation": classification["reason"],
+        "severity": classification["severity"],
+        "recommended_action": classification["recommended_action"],
+        "requires_human_review": classification["requires_human_review"],
+        "suggested_execution_action": classification["suggested_execution_action"],
+    }
+
+
+APPROVE_EXECUTION_MAP = {
+    "MARK_AS_RECONCILED": ("Reconciled", "Executed"),
+    "MARK_AS_ACCEPTABLE_VARIANCE": ("Reconciled with variance", "Executed"),
+    "REQUEST_REMAINING_BALANCE": ("Follow-up required", "Ready"),
+    "REQUEST_PAYMENT_PROOF": ("Proof required", "Ready"),
+    "ESCALATE_TO_MANAGER": ("Escalated", "Ready"),
+    "INVESTIGATE_UNKNOWN_DEPOSIT": ("Investigation required", "Ready"),
+    "INVESTIGATE_DUPLICATE_PAYMENT": ("Investigation required", "Ready"),
+    "NEEDS_MANUAL_REVIEW": ("Needs manual review", "Ready"),
+}
+
+
+def _execution_fields_for_decision(record: dict, decision: str, reviewed_by: str, review_reason: str, now: str) -> dict:
+    approval_status = "Approved" if decision == "approved" else "Rejected"
+    fields = {
+        "human_decision": decision,
+        "human_decision_at": now,
+        "approval_status": approval_status,
+        "reviewed_by": reviewed_by,
+        "reviewed_at": now,
+        "review_reason": review_reason,
+    }
+
+    if decision == "approved":
+        execution_action = record.get("suggested_execution_action") or "NEEDS_MANUAL_REVIEW"
+        case_status, execution_status = APPROVE_EXECUTION_MAP.get(
+            execution_action,
+            ("Needs manual review", "Ready"),
+        )
+        fields.update({
+            "case_status": case_status,
+            "execution_action": execution_action,
+            "execution_status": execution_status,
+            "execution_result": f"Approved by {reviewed_by}. {case_status}.",
+        })
+    else:
+        fields.update({
+            "case_status": "Rejected" if review_reason else "Needs manual review",
+            "execution_action": record.get("suggested_execution_action") or "NEEDS_MANUAL_REVIEW",
+            "execution_status": "Skipped",
+            "execution_result": f"Rejected by {reviewed_by}. No reconciliation action executed.",
+        })
+
+    return fields
+
+
+def _fetch_result_context(db, record: dict) -> tuple[dict | None, dict | None]:
+    invoice = None
+    bank_tx = None
+
+    if record.get("invoice_id"):
+        inv_res = db.table("invoices").select("*").eq("id", record["invoice_id"]).execute()
+        if inv_res.data:
+            invoice = inv_res.data[0]
+
+    if record.get("bank_transaction_id"):
+        tx_res = db.table("bank_transactions").select("*").eq("id", record["bank_transaction_id"]).execute()
+        if tx_res.data:
+            bank_tx = tx_res.data[0]
+
+    return invoice, bank_tx
+
+
+async def _send_follow_up_if_needed(db, record: dict, update_fields: dict, match_result_id: str = None) -> dict:
+    execution_action = update_fields.get("execution_action")
+    if update_fields.get("approval_status") != "Approved" or not followup.should_send_follow_up(execution_action):
+        return {}
+
+    message_record = {**record, **update_fields}
+    invoice, bank_tx = _fetch_result_context(db, message_record)
+    message = followup.build_follow_up_message(message_record, invoice, bank_tx)
+    send_result = await followup.send_telegram_message(message)
+    now = datetime.now(timezone.utc).isoformat()
+
+    follow_up_fields = {
+        "follow_up_channel": "Telegram",
+        "follow_up_message": message,
+        "follow_up_status": send_result["status"],
+        "follow_up_sent_at": now if send_result["sent"] else None,
+    }
+
+    if send_result["sent"]:
+        follow_up_fields["execution_status"] = "Executed"
+        follow_up_fields["execution_result"] = f"{update_fields['execution_result']} Telegram follow-up sent."
+    else:
+        follow_up_fields["execution_result"] = f"{update_fields['execution_result']} {send_result['detail']}"
+
+    if match_result_id:
+        db.table("match_results").update(follow_up_fields).eq("id", match_result_id).execute()
+
+    _log(
+        db,
+        "send_telegram_follow_up" if send_result["sent"] else "telegram_follow_up_skipped",
+        send_result["detail"],
+        invoice_id=message_record.get("invoice_id"),
+        match_result_id=match_result_id,
+    )
+
+    return follow_up_fields
 
 
 # ─── POST /reconcile  (single-entity, backward compatible) ───────────────────
@@ -126,6 +238,24 @@ async def reconcile(req: ReconcileRequest):
     # Step 5 — Filter to likely matching transactions for this invoice
     candidate_txs = matcher.filter_transactions_for_invoice(invoice, bank_txs)
 
+    # Prefer a single best transaction unless a multi-transaction subset matches better
+    best_single = matcher.best_match(invoice, candidate_txs)
+    best_tx = best_single["transaction"]
+
+    subset = matcher.find_best_transaction_subset_for_invoice(invoice, candidate_txs)
+    if subset and len(subset) > 1:
+        expected_myr = invoice.get("expected_myr") or 0.0
+        single_diff = abs((best_tx.get("credit_amount") or 0.0) - expected_myr)
+        subset_total = sum((tx.get("credit_amount") or 0.0) for tx in subset)
+        subset_diff = abs(subset_total - expected_myr)
+        # Keep split only if it clearly improves the match
+        if expected_myr > 0 and subset_diff + 0.01 < single_diff:
+            candidate_txs = subset
+        else:
+            candidate_txs = [best_tx]
+    else:
+        candidate_txs = [best_tx]
+
     # Step 6 — Detect scenario and match
     scenario = matcher.detect_scenario([invoice], candidate_txs, claimed_tx_ids)
     best = matcher.best_match(invoice, candidate_txs)
@@ -169,23 +299,20 @@ async def reconcile(req: ReconcileRequest):
     )
 
     # Step 6 — Classify exception if needed
-    exception_type = None
-    exception_explanation = None
-
-    if status in ("review", "exception") or scenario in ("s5_partial", "s6_duplicate", "s8_bank_fee"):
-        try:
-            classification = await chutes.classify_exception(invoice, best_tx, {**match_insert, "id": match_id})
-            exception_type = classification["exception_type"]
-            exception_explanation = classification["exception_explanation"]
-
-            db.table("match_results").update({
-                "exception_type": exception_type,
-                "exception_explanation": exception_explanation,
-            }).eq("id", match_id).execute()
-
-            _log(db, "classify_exception", f"type={exception_type}", invoice_id=invoice_id, match_result_id=match_id)
-        except Exception as e:
-            _log(db, "classify_exception_error", str(e), invoice_id=invoice_id, match_result_id=match_id)
+    classification = matcher.classify_single_match_exception(
+        invoice,
+        best_tx,
+        {**match_insert, "id": match_id},
+        claimed_tx_ids,
+    )
+    db.table("match_results").update(_classification_fields(classification)).eq("id", match_id).execute()
+    _log(
+        db,
+        "classify_exception",
+        f"type={classification['exception_type']} severity={classification['severity']} action={classification['suggested_execution_action']}",
+        invoice_id=invoice_id,
+        match_result_id=match_id,
+    )
 
     return {
         "invoice_id": invoice_id,
@@ -200,8 +327,7 @@ async def reconcile(req: ReconcileRequest):
         "fx_date": fx_date,
         "fx_source": fx_source,
         "expected_myr": expected_myr,
-        "exception_type": exception_type,
-        "exception_explanation": exception_explanation,
+        **_classification_fields(classification),
         "score_breakdown": best["score_breakdown"],
         "is_partial": partial_info["is_partial"],
         "remaining_amount_myr": partial_info["remaining_myr"],
@@ -353,17 +479,17 @@ async def reconcile_multi(req: MultiReconcileRequest):
          f"coverage={group_result['coverage_pct']}% variance={group_result['total_variance_myr']}")
 
     # Step 5 — Classify group exception via AI if needed
-    exception_type = None
-    exception_explanation = None
-
-    if status in ("review", "exception", "partial") or scenario in ("s5_partial", "s6_duplicate", "s8_bank_fee"):
-        try:
-            classification = await chutes.classify_group_exception(candidate_invoices, candidate_txs, group_result)
-            exception_type = classification["exception_type"]
-            exception_explanation = classification["exception_explanation"]
-            _log(db, "classify_group_exception", f"type={exception_type}")
-        except Exception as e:
-            _log(db, "classify_group_exception_error", str(e))
+    classification = matcher.classify_match_exception(
+        candidate_invoices,
+        candidate_txs,
+        group_result,
+        claimed_tx_ids,
+    )
+    _log(
+        db,
+        "classify_group_exception",
+        f"type={classification['exception_type']} severity={classification['severity']} action={classification['suggested_execution_action']}",
+    )
 
     # Step 6 — Save match_group record
     group_insert = {
@@ -376,8 +502,7 @@ async def reconcile_multi(req: MultiReconcileRequest):
         "coverage_pct": group_result["coverage_pct"],
         "status": status,
         "confidence": group_result["confidence"],
-        "exception_type": exception_type,
-        "exception_explanation": exception_explanation,
+        **_classification_fields(classification),
     }
     group_db_result = db.table("match_groups").insert(group_insert).execute()
     if not group_db_result.data:
@@ -420,8 +545,7 @@ async def reconcile_multi(req: MultiReconcileRequest):
             "paid_amount_myr": best_tx.get("credit_amount") or 0.0,
             "remaining_amount_myr": partial_info["remaining_myr"],
             "is_partial": partial_info["is_partial"],
-            "exception_type": exception_type,
-            "exception_explanation": exception_explanation,
+            **_classification_fields(classification),
         }
         mr_result = db.table("match_results").insert(mr_insert).execute()
         if mr_result.data:
@@ -444,8 +568,7 @@ async def reconcile_multi(req: MultiReconcileRequest):
         "coverage_pct": group_result["coverage_pct"],
         "is_partial": group_result["is_partial"],
         "remaining_amount_myr": group_result["remaining_amount_myr"],
-        "exception_type": exception_type,
-        "exception_explanation": exception_explanation,
+        **_classification_fields(classification),
         "match_result_ids": match_result_ids,
     }
 
@@ -454,23 +577,50 @@ async def reconcile_multi(req: MultiReconcileRequest):
 
 @router.patch("/results/{match_result_id}/decision")
 async def update_decision(match_result_id: str, req: DecisionRequest):
-    """Record human approve/reject/partial decision on a match result."""
-    valid = {"approved", "rejected", "partial"}
+    """Record human approve/reject decision and execute the mapped workflow."""
+    valid = {"approved", "rejected"}
     if req.decision not in valid:
         raise HTTPException(status_code=422, detail=f"decision must be one of: {valid}")
 
     db = get_supabase()
     now = datetime.now(timezone.utc).isoformat()
+    existing = db.table("match_results").select("*").eq("id", match_result_id).execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="Match result not found")
+
+    reviewed_by = (req.reviewed_by or "Reviewer").strip() or "Reviewer"
+    review_reason = (req.review_reason or "").strip()
+    update_fields = _execution_fields_for_decision(
+        existing.data[0],
+        req.decision,
+        reviewed_by,
+        review_reason,
+        now,
+    )
     result = (
         db.table("match_results")
-        .update({"human_decision": req.decision, "human_decision_at": now})
+        .update(update_fields)
         .eq("id", match_result_id)
         .execute()
     )
-    if not result.data:
-        raise HTTPException(status_code=404, detail="Match result not found")
 
-    return result.data[0]
+    action = "approve_match" if req.decision == "approved" else "reject_match"
+    _log(
+        db,
+        action,
+        f"{update_fields['approval_status']} by {reviewed_by}. execution={update_fields['execution_action']} status={update_fields['execution_status']}. reason={review_reason or 'No reason provided'}",
+        invoice_id=existing.data[0].get("invoice_id"),
+        match_result_id=match_result_id,
+    )
+
+    follow_up_fields = await _send_follow_up_if_needed(
+        db,
+        existing.data[0],
+        update_fields,
+        match_result_id=match_result_id,
+    )
+
+    return {**result.data[0], **follow_up_fields}
 
 
 # ─── PATCH /groups/{group_id}/decision ───────────────────────────────────────
@@ -478,36 +628,77 @@ async def update_decision(match_result_id: str, req: DecisionRequest):
 @router.patch("/groups/{group_id}/decision")
 async def update_group_decision(group_id: str, req: GroupDecisionRequest):
     """
-    Record human decision for an entire match group.
+    Record human approve/reject decision for an entire match group.
     Also propagates the decision to all child match_results.
     """
-    valid = {"approved", "rejected", "partial"}
+    valid = {"approved", "rejected"}
     if req.decision not in valid:
         raise HTTPException(status_code=422, detail=f"decision must be one of: {valid}")
 
     db = get_supabase()
     now = datetime.now(timezone.utc).isoformat()
+    existing = db.table("match_groups").select("*").eq("id", group_id).execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="Match group not found")
+
+    reviewed_by = (req.reviewed_by or "Reviewer").strip() or "Reviewer"
+    review_reason = (req.review_reason or "").strip()
+    update_fields = _execution_fields_for_decision(
+        existing.data[0],
+        req.decision,
+        reviewed_by,
+        review_reason,
+        now,
+    )
 
     # Update the group
     group_result = (
         db.table("match_groups")
-        .update({"human_decision": req.decision, "human_decision_at": now})
+        .update(update_fields)
         .eq("id", group_id)
         .execute()
     )
-    if not group_result.data:
-        raise HTTPException(status_code=404, detail="Match group not found")
+
+    group_follow_up_fields = {}
+    if update_fields["approval_status"] == "Approved" and followup.should_send_follow_up(update_fields["execution_action"]):
+        message = followup.build_follow_up_message({**existing.data[0], **update_fields})
+        send_result = await followup.send_telegram_message(message)
+        sent_at = datetime.now(timezone.utc).isoformat() if send_result["sent"] else None
+        group_follow_up_fields = {
+            "follow_up_channel": "Telegram",
+            "follow_up_message": message,
+            "follow_up_status": send_result["status"],
+            "follow_up_sent_at": sent_at,
+            "execution_result": f"{update_fields['execution_result']} {'Telegram follow-up sent.' if send_result['sent'] else send_result['detail']}",
+        }
+        if send_result["sent"]:
+            group_follow_up_fields["execution_status"] = "Executed"
+        db.table("match_groups").update(group_follow_up_fields).eq("id", group_id).execute()
 
     # Propagate to all child match_results
-    db.table("match_results").update({
-        "human_decision": req.decision,
-        "human_decision_at": now,
-    }).eq("match_group_id", group_id).execute()
+    child_results = db.table("match_results").select("*").eq("match_group_id", group_id).execute()
+    for child in child_results.data or []:
+        child_fields = _execution_fields_for_decision(child, req.decision, reviewed_by, review_reason, now)
+        if group_follow_up_fields:
+            child_fields.update(group_follow_up_fields)
+        db.table("match_results").update(child_fields).eq("id", child["id"]).execute()
+        _log(
+            db,
+            "approve_group" if req.decision == "approved" else "reject_group",
+            f"group={group_id} {child_fields['approval_status']} by {reviewed_by}. execution={child_fields['execution_action']} status={child_fields['execution_status']}. reason={review_reason or 'No reason provided'}",
+            invoice_id=child.get("invoice_id"),
+            match_result_id=child["id"],
+        )
 
     return {
         "group_id": group_id,
         "decision": req.decision,
         "decided_at": now,
+        "execution_action": update_fields["execution_action"],
+        "execution_status": group_follow_up_fields.get("execution_status") or update_fields["execution_status"],
+        "case_status": update_fields["case_status"],
+        "follow_up_channel": group_follow_up_fields.get("follow_up_channel"),
+        "follow_up_status": group_follow_up_fields.get("follow_up_status"),
     }
 
 
