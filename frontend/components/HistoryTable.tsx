@@ -162,6 +162,8 @@ export default function HistoryTable({
           const transactions = group.bank_transactions ?? [];
           const variance = group.total_variance_myr ?? 0;
           const conf = group.confidence ?? 0;
+          const expectedTotal = group.total_expected_myr;
+          const receivedTotal = group.total_received_myr;
           const invoiceLabel =
             invoices.length > 1
               ? `Group (${invoices.length})`
@@ -257,7 +259,17 @@ export default function HistoryTable({
 
                   <div className="flex items-center justify-between gap-3 mb-4">
                     <div className="text-[12px] text-neutral-400">
-                      Coverage: {displayValue(group.coverage_pct?.toFixed(1))}%
+                      Expected MYR{" "}
+                      <span className="text-blue-400 font-semibold">
+                        {expectedTotal?.toFixed(2) ?? "-"}
+                      </span>
+                      {" · "}
+                      Received MYR{" "}
+                      <span className="text-green-400 font-semibold">
+                        {receivedTotal?.toFixed(2) ?? "-"}
+                      </span>
+                      {" · "}
+                      Coverage {displayValue(group.coverage_pct?.toFixed(1))}%
                     </div>
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-[12px] font-bold font-mono border ${confBadge(conf)} shrink-0`}
@@ -348,17 +360,6 @@ export default function HistoryTable({
                       )}
                     </div>
                   </div>
-
-                  {group.exception_explanation && (
-                    <div className="rounded-md p-3 bg-amber-950/20 border border-amber-900/50 mt-4">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-1.5">
-                        Agent explanation
-                      </p>
-                      <p className="text-[12px] text-neutral-300 leading-relaxed">
-                        {group.exception_explanation}
-                      </p>
-                    </div>
-                  )}
                 </div>
               )}
             </React.Fragment>
@@ -670,17 +671,6 @@ export default function HistoryTable({
                           <ConfidenceBreakdown
                             breakdown={result.score_breakdown}
                           />
-                        </div>
-                      )}
-
-                      {result.exception_explanation && (
-                        <div className="rounded-md p-3 bg-amber-950/20 border border-amber-900/50">
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-1.5">
-                            Agent explanation
-                          </p>
-                          <p className="text-[12px] text-neutral-300 leading-relaxed">
-                            {result.exception_explanation}
-                          </p>
                         </div>
                       )}
 
