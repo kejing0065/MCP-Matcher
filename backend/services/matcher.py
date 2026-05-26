@@ -180,6 +180,21 @@ def filter_transactions_for_invoice(
     if not bank_transactions:
         return []
 
+    # 0) Exact-ish reference hit in parsed reference or description
+    if invoice_no:
+        normalized_inv = "".join(ch for ch in str(invoice_no).lower() if ch.isalnum())
+        if normalized_inv:
+            direct_hits = []
+            for tx in bank_transactions:
+                parsed_ref = tx.get("parsed_reference") or ""
+                desc = tx.get("description") or ""
+                normalized_parsed = "".join(ch for ch in str(parsed_ref).lower() if ch.isalnum())
+                normalized_desc = "".join(ch for ch in str(desc).lower() if ch.isalnum())
+                if normalized_inv in normalized_parsed or normalized_inv in normalized_desc:
+                    direct_hits.append(tx)
+            if direct_hits:
+                return direct_hits
+
     # 1) Reference-based filter
     ref_hits = []
     for tx in bank_transactions:
