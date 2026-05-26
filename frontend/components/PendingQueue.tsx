@@ -290,7 +290,8 @@ export default function PendingQueue({
         </div>
       </div>
 
-      {/* ─── AUTO-MATCHED TODAY ─── */}
+      {/*
+      ─── AUTO-MATCHED TODAY ───
       {autoMatched.length > 0 && (
         <div>
           <div className="text-[10px] uppercase tracking-wider text-green-500/70 font-bold mb-2 flex items-center gap-2">
@@ -332,6 +333,7 @@ export default function PendingQueue({
           </div>
         </div>
       )}
+      */}
     </div>
   );
 }
