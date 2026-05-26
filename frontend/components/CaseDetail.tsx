@@ -34,6 +34,19 @@ function formatAmount(value?: number | null) {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function breakdownSummary(breakdown?: MatchResult["score_breakdown"]) {
+  if (!breakdown) return null;
+  const scores = [
+    { label: "amount", value: breakdown.amount_score },
+    { label: "date", value: breakdown.date_score },
+    { label: "reference", value: breakdown.reference_score },
+  ];
+  const sorted = [...scores].sort((a, b) => b.value - a.value);
+  const strongest = sorted[0];
+  const weakest = sorted[sorted.length - 1];
+  return `Confidence is ${breakdown.confidence.toFixed(0)}% (amount ${breakdown.amount_score.toFixed(0)}%, date ${breakdown.date_score.toFixed(0)}%, reference ${breakdown.reference_score.toFixed(0)}%), strongest on ${strongest.label} and weakest on ${weakest.label}.`;
+}
+
 function InfoGrid({ result }: { result: MatchResult }) {
   const items: [string, React.ReactNode, boolean?][] = [
     ["Exception type", result.exception_type],
@@ -110,8 +123,9 @@ export default function CaseDetail({ result, onDecision, upload }: CaseDetailPro
   const tolerance = (inv?.expected_myr ?? 0) * 0.02;
   const rangeMin = (inv?.expected_myr ?? 0) - tolerance;
   const rangeMax = (inv?.expected_myr ?? 0) + tolerance;
+  const scoreSummary = breakdownSummary(result.score_breakdown);
   const agentSummary = inv || tx
-    ? `The invoice is ${inv?.currency ?? "-"} ${formatAmount(inv?.amount)} and should convert to about MYR ${formatAmount(inv?.expected_myr)}. The bank shows a receipt of MYR ${formatAmount(tx?.credit_amount)}, leaving a variance of MYR ${formatAmount(variance)} between expected and actual.`
+    ? `The invoice amount is ${inv?.currency ?? "-"} ${formatAmount(inv?.amount)}, with an expected MYR ${formatAmount(inv?.expected_myr)} vs actual MYR ${formatAmount(tx?.credit_amount)}, producing a variance of MYR ${formatAmount(variance)}.${scoreSummary ? ` ${scoreSummary}` : ""}`
     : null;
 
   const decide = async (decision: "approved" | "rejected") => {

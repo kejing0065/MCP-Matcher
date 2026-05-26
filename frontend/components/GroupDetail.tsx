@@ -76,6 +76,19 @@ function formatAmount(value?: number | null) {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function breakdownSummary(breakdown?: { amount_score: number; date_score: number; reference_score: number; confidence: number } | null) {
+  if (!breakdown) return null;
+  const scores = [
+    { label: "amount", value: breakdown.amount_score },
+    { label: "date", value: breakdown.date_score },
+    { label: "reference", value: breakdown.reference_score },
+  ];
+  const sorted = [...scores].sort((a, b) => b.value - a.value);
+  const strongest = sorted[0];
+  const weakest = sorted[sorted.length - 1];
+  return `Average confidence is ${breakdown.confidence.toFixed(0)}% (amount ${breakdown.amount_score.toFixed(0)}%, date ${breakdown.date_score.toFixed(0)}%, reference ${breakdown.reference_score.toFixed(0)}%), strongest on ${strongest.label} and weakest on ${weakest.label}.`;
+}
+
 function InfoGrid({ group }: { group: MatchGroup }) {
   const groupReason = group.match_results?.find((result) => result.reason)?.reason;
   const items: [string, React.ReactNode, boolean?][] = [
@@ -119,8 +132,36 @@ export default function GroupDetail({ group, onDecision, upload }: GroupDetailPr
   const transactionSummary = transactions
     .map((tx) => `A related bank transaction shows a receipt of MYR ${formatAmount(tx.credit_amount)}.`)
     .join(" ");
-  const totalSummary = `In total, expected MYR ${formatAmount(group.total_expected_myr)} vs received MYR ${formatAmount(group.total_received_myr)} results in a variance of MYR ${formatAmount(group.total_variance_myr)}.`;
-  const groupAgentSummary = [invoiceSummary, transactionSummary, totalSummary]
+  const invoiceBreakdowns = group.invoice_score_breakdowns ?? [];
+  const averagedBreakdown = invoiceBreakdowns.length > 0
+    ? invoiceBreakdowns.reduce(
+        (acc, item) => {
+          const scores = item.score_breakdown;
+          if (!scores) return acc;
+          acc.count += 1;
+          acc.amount += scores.amount_score ?? 0;
+          acc.date += scores.date_score ?? 0;
+          acc.reference += scores.reference_score ?? 0;
+          acc.confidence += scores.confidence ?? 0;
+          return acc;
+        },
+        { count: 0, amount: 0, date: 0, reference: 0, confidence: 0 },
+      )
+    : null;
+  const averageScores = averagedBreakdown && averagedBreakdown.count > 0
+    ? {
+        amount_score: averagedBreakdown.amount / averagedBreakdown.count,
+        date_score: averagedBreakdown.date / averagedBreakdown.count,
+        reference_score: averagedBreakdown.reference / averagedBreakdown.count,
+        confidence: averagedBreakdown.confidence / averagedBreakdown.count,
+      }
+    : null;
+  const totalSummary = `Total expected MYR ${formatAmount(group.total_expected_myr)} vs received MYR ${formatAmount(group.total_received_myr)} results in a variance of MYR ${formatAmount(group.total_variance_myr)}.`;
+  const scoreSummary = breakdownSummary(averageScores);
+  const groupAgentSummary = [
+    totalSummary,
+    scoreSummary,
+  ]
     .filter(Boolean)
     .join(" ");
   const isDuplicate = group.scenario_type === "s6_duplicate";
@@ -293,89 +334,164 @@ export default function GroupDetail({ group, onDecision, upload }: GroupDetailPr
         </div>
       )}
 
-      {group.invoice_score_breakdowns && group.invoice_score_breakdowns.length > 0 && (
+      {invoiceBreakdowns.length > 0 && (
         <div className="rounded-md p-3.5 bg-purple-950/20 border border-purple-900/50">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-purple-400 mb-3">
-            Invoice Confidence Breakdown
-          </p>
-          <div className="space-y-4">
-            {group.invoice_score_breakdowns.map((item, idx) => (
-              <div key={idx} className={`${idx > 0 ? "border-t border-purple-900/30 pt-3" : ""}`}>
-                <p className="text-[11px] font-semibold text-neutral-200 mb-3">{item.invoice_no ?? item.invoice_id}</p>
-                {item.score_breakdown && (
-                  <div className="space-y-2">
-                    {/* Overall confidence bar */}
-                    <div className="flex items-center gap-3 mb-2 pb-2 border-b border-purple-900/20">
-                      <span className="w-14 text-[11px] font-bold text-neutral-300 shrink-0">Overall</span>
-                      <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${
-                            item.score_breakdown.confidence >= 85
-                              ? "bg-green-500"
-                              : item.score_breakdown.confidence >= 60
-                              ? "bg-amber-500"
-                              : "bg-red-500"
-                          }`}
-                          style={{ width: `${Math.min(item.score_breakdown.confidence, 100)}%` }}
-                        />
-                      </div>
-                      <span className="text-neutral-300 font-mono w-9 text-right text-[11px] font-bold">{item.score_breakdown.confidence.toFixed(0)}%</span>
-                    </div>
-                    
-                    {/* Individual scores */}
-                    <div className="flex items-center gap-3">
-                      <span className="w-14 text-[11px] text-neutral-400 shrink-0">Amount</span>
-                      <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${
-                            item.score_breakdown.amount_score >= 85
-                              ? "bg-green-500"
-                              : item.score_breakdown.amount_score >= 60
-                              ? "bg-amber-500"
-                              : "bg-red-500"
-                          }`}
-                          style={{ width: `${Math.min(item.score_breakdown.amount_score, 100)}%` }}
-                        />
-                      </div>
-                      <span className="text-neutral-300 font-mono w-9 text-right text-[11px]">{item.score_breakdown.amount_score.toFixed(0)}%</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="w-14 text-[11px] text-neutral-400 shrink-0">Date</span>
-                      <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${
-                            item.score_breakdown.date_score >= 85
-                              ? "bg-green-500"
-                              : item.score_breakdown.date_score >= 60
-                              ? "bg-amber-500"
-                              : "bg-red-500"
-                          }`}
-                          style={{ width: `${Math.min(item.score_breakdown.date_score, 100)}%` }}
-                        />
-                      </div>
-                      <span className="text-neutral-300 font-mono w-9 text-right text-[11px]">{item.score_breakdown.date_score.toFixed(0)}%</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="w-14 text-[11px] text-neutral-400 shrink-0">Reference</span>
-                      <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${
-                            item.score_breakdown.reference_score >= 85
-                              ? "bg-green-500"
-                              : item.score_breakdown.reference_score >= 60
-                              ? "bg-amber-500"
-                              : "bg-red-500"
-                          }`}
-                          style={{ width: `${Math.min(item.score_breakdown.reference_score, 100)}%` }}
-                        />
-                      </div>
-                      <span className="text-neutral-300 font-mono w-9 text-right text-[11px]">{item.score_breakdown.reference_score.toFixed(0)}%</span>
-                    </div>
+          {averageScores && (
+            <div className="border border-purple-900/30 rounded-md p-2.5 bg-[#0d1117] mb-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-purple-300 mb-2">
+                Group Average
+              </p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-3 mb-2 pb-2 border-b border-purple-900/20">
+                  <span className="w-14 text-[11px] font-bold text-neutral-300 shrink-0">Overall</span>
+                  <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${
+                        averageScores.confidence >= 85
+                          ? "bg-green-500"
+                          : averageScores.confidence >= 60
+                          ? "bg-amber-500"
+                          : "bg-red-500"
+                      }`}
+                      style={{ width: `${Math.min(averageScores.confidence, 100)}%` }}
+                    />
                   </div>
-                )}
+                  <span className="text-neutral-300 font-mono w-9 text-right text-[11px] font-bold">{averageScores.confidence.toFixed(0)}%</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="w-14 text-[11px] text-neutral-400 shrink-0">Amount</span>
+                  <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${
+                        averageScores.amount_score >= 85
+                          ? "bg-green-500"
+                          : averageScores.amount_score >= 60
+                          ? "bg-amber-500"
+                          : "bg-red-500"
+                      }`}
+                      style={{ width: `${Math.min(averageScores.amount_score, 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-neutral-300 font-mono w-9 text-right text-[11px]">{averageScores.amount_score.toFixed(0)}%</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="w-14 text-[11px] text-neutral-400 shrink-0">Date</span>
+                  <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${
+                        averageScores.date_score >= 85
+                          ? "bg-green-500"
+                          : averageScores.date_score >= 60
+                          ? "bg-amber-500"
+                          : "bg-red-500"
+                      }`}
+                      style={{ width: `${Math.min(averageScores.date_score, 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-neutral-300 font-mono w-9 text-right text-[11px]">{averageScores.date_score.toFixed(0)}%</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="w-14 text-[11px] text-neutral-400 shrink-0">Reference</span>
+                  <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${
+                        averageScores.reference_score >= 85
+                          ? "bg-green-500"
+                          : averageScores.reference_score >= 60
+                          ? "bg-amber-500"
+                          : "bg-red-500"
+                      }`}
+                      style={{ width: `${Math.min(averageScores.reference_score, 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-neutral-300 font-mono w-9 text-right text-[11px]">{averageScores.reference_score.toFixed(0)}%</span>
+                </div>
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+          <details>
+            <summary className="text-[10px] font-bold uppercase tracking-wider text-purple-400 cursor-pointer">
+              Invoice Confidence Breakdown
+            </summary>
+            <div className="space-y-4 mt-3">
+              {invoiceBreakdowns.map((item, idx) => (
+                <div key={idx} className={`${idx > 0 ? "border-t border-purple-900/30 pt-3" : ""}`}>
+                  <p className="text-[11px] font-semibold text-neutral-200 mb-3">{item.invoice_no ?? item.invoice_id}</p>
+                  {item.score_breakdown && (
+                    <div className="space-y-2">
+                      {/* Overall confidence bar */}
+                      <div className="flex items-center gap-3 mb-2 pb-2 border-b border-purple-900/20">
+                        <span className="w-14 text-[11px] font-bold text-neutral-300 shrink-0">Overall</span>
+                        <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${
+                              item.score_breakdown.confidence >= 85
+                                ? "bg-green-500"
+                                : item.score_breakdown.confidence >= 60
+                                ? "bg-amber-500"
+                                : "bg-red-500"
+                            }`}
+                            style={{ width: `${Math.min(item.score_breakdown.confidence, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-neutral-300 font-mono w-9 text-right text-[11px] font-bold">{item.score_breakdown.confidence.toFixed(0)}%</span>
+                      </div>
+                      
+                      {/* Individual scores */}
+                      <div className="flex items-center gap-3">
+                        <span className="w-14 text-[11px] text-neutral-400 shrink-0">Amount</span>
+                        <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${
+                              item.score_breakdown.amount_score >= 85
+                                ? "bg-green-500"
+                                : item.score_breakdown.amount_score >= 60
+                                ? "bg-amber-500"
+                                : "bg-red-500"
+                            }`}
+                            style={{ width: `${Math.min(item.score_breakdown.amount_score, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-neutral-300 font-mono w-9 text-right text-[11px]">{item.score_breakdown.amount_score.toFixed(0)}%</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="w-14 text-[11px] text-neutral-400 shrink-0">Date</span>
+                        <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${
+                              item.score_breakdown.date_score >= 85
+                                ? "bg-green-500"
+                                : item.score_breakdown.date_score >= 60
+                                ? "bg-amber-500"
+                                : "bg-red-500"
+                            }`}
+                            style={{ width: `${Math.min(item.score_breakdown.date_score, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-neutral-300 font-mono w-9 text-right text-[11px]">{item.score_breakdown.date_score.toFixed(0)}%</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="w-14 text-[11px] text-neutral-400 shrink-0">Reference</span>
+                        <div className="flex-1 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${
+                              item.score_breakdown.reference_score >= 85
+                                ? "bg-green-500"
+                                : item.score_breakdown.reference_score >= 60
+                                ? "bg-amber-500"
+                                : "bg-red-500"
+                            }`}
+                            style={{ width: `${Math.min(item.score_breakdown.reference_score, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-neutral-300 font-mono w-9 text-right text-[11px]">{item.score_breakdown.reference_score.toFixed(0)}%</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </details>
         </div>
       )}
 
