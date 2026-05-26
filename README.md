@@ -95,31 +95,31 @@
               │  → Confidence score 0–100%          │
               └────────────┬────────────────────────┘
                            │
-               ┌───────────┴───────────┐
-          ≥ 85%│                  < 85%│
-               ▼                       ▼
-        ┌─────────────┐      ┌──────────────────────┐
-        │ Auto-Matched│      │     MCP Tool 6       │
-        │  Case closed│      │  classify_exception  │
-        │  No human   │      │  Chutes DeepSeek V3  │
-        │  needed     │      │                      │
-        └─────────────┘      │  Explains in plain   │
-                             │  English:            │
-                             │  · Amount gap reason │
-                             │  · FX variance note  │
-                             │  · Reference mismatch│
-                             │  · Split/combined    │
-                             │    payment detected  │
-                             └──────────┬───────────┘
-                                        │
-                                        ▼
-                             ┌──────────────────────┐
-                             │    Human Review      │
-                             │  /review dashboard   │
-                             │  Approve / Reject    │
-                             │  Human always        │
-                             │  decides < 85% cases │
-                             └──────────┬───────────┘
+                           ▼
+              ┌─────────────────────────────────────┐
+              │          MCP Tool 6                 │
+              │       classify_exception            │
+              │       Chutes DeepSeek V3            │
+              │                                     │
+              │  Explains the match in plain        │
+              │  English regardless of score:       │
+              │  · Confidence score + breakdown     │
+              │  · Amount gap / FX variance         │
+              │  · Reference match strength         │
+              │  · Split / combined payment signal  │
+              └────────────┬────────────────────────┘
+                           │
+                           ▼
+              ┌─────────────────────────────────────┐
+              │           Human Review              │
+              │         /review dashboard           │
+              │                                     │
+              │   Human ALWAYS makes the final      │
+              │   decision regardless of score.     │
+              │   Agent assists, human decides.     │
+              │                                     │
+              │         Approve / Reject            │
+              └────────────┬────────────────────────┘
                                         │
                                         ▼
                              ┌──────────────────────┐
