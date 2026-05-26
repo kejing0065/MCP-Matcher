@@ -98,7 +98,12 @@ async def parse_bank_csv(file: UploadFile = File(...)):
     """
     content = await file.read()
     try:
-        df = pd.read_csv(io.BytesIO(content))
+        # Check if the first line is an opening balance and skip if so
+        first_line = content.splitlines()[0].decode('utf-8', errors='ignore').lower()
+        if 'opening balance' in first_line:
+            df = pd.read_csv(io.BytesIO(content), skiprows=1)
+        else:
+            df = pd.read_csv(io.BytesIO(content))
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Could not parse CSV: {e}")
 

@@ -220,6 +220,13 @@ export default function GroupDetail({ group, onDecision, upload }: GroupDetailPr
   }
 
   const decide = async (decision: "approved" | "rejected") => {
+    if (!reviewedBy || !reviewReason) {
+      showToast({
+        type: "error",
+        message: "Please enter your name and a reason for the decision.",
+      });
+      return;
+    }
     setBusy(true);
     setBtnLoading(decision);
     try {
