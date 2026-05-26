@@ -17,13 +17,13 @@
 
 ## 💡 Our Solution
 
-**Global Treasury Agent** is an AI-powered reconciliation agent that:
+**Global Treasury Agent** is an MCP AI-powered reconciliation agent that:
 
 1. **Reads invoices** (images or PDFs) using vision AI — any layout, any language
 2. **Fetches the historical FX rate** from the exact payment date — not today's rate
 3. **Decodes Malaysian bank descriptions** — DuitNow, IBFT, IBG, TT formats
 4. **Scores each match** using amount tolerance, date proximity, and fuzzy reference matching
-5. **Explains failures** in plain English and sends uncertain cases to a human reviewer
+5. **Explains** in plain English and sends uncertain cases to a human reviewer
 6. **Logs every agent action** with timestamps for full auditability
 
 ---
