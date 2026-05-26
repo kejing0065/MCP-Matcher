@@ -7,9 +7,11 @@
 
 ## 🎯 The Problem
 
-- **Wrong FX rate** — Tools like Xero and QuickBooks compare against today's exchange rate, not the rate on the day the customer actually paid. Every cross-border payment shows a false mismatch even when the amount is perfectly correct.
-- **Manual matching wastes hours** — Finance staff manually scroll through hundreds of invoices to match each bank transaction one by one. A single monthly statement can take 3–4 hours to reconcile, every month-end, with no guarantee of accuracy.
 - **Complex payment patterns** — A customer pays one invoice in two transfers, or combines two invoices into one payment. Every existing tool marks these as unmatched with no explanation, leaving finance staff to figure it out manually.
+- **Manual matching wastes hours** — Finance staff manually scroll through hundreds of invoices to match each bank transaction one by one. A single monthly statement can take 3–4 hours to reconcile, every month-end, with no guarantee of accuracy.
+- **Wrong FX rate** — Tools like Xero and QuickBooks compare against today's exchange rate, not the rate on the day the customer actually paid. Every cross-border payment shows a false mismatch even when the amount is perfectly correct.
+
+
 
 ---
 
