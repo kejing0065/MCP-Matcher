@@ -402,39 +402,6 @@ Sample test files are included in `/test-data/`:
 
 ---
 
-## 🔍 Matching Algorithm
-
-```
-Confidence Score = (Amount Score × 0.40)
-                 + (Date Score   × 0.30)
-                 + (Ref Score    × 0.30)
-
-Amount Score:
-  diff% ≤ 2%  → 100  (within FX tolerance band)
-  diff% ≤ 5%  → 80
-  diff% ≤ 10% → 50
-  diff% > 10% → 0
-
-Date Score:
-  days apart = 0–1 → 100
-  days apart = 2–3 → 80
-  days apart = 4–7 → 50
-  days apart > 7   → 0
-
-Reference Score:
-  rapidfuzz token_sort_ratio between:
-  - invoice.customer vs parsed_customer
-  - invoice.invoice_no vs parsed_reference
-  → takes the higher of the two scores
-
-Decision threshold:
-  ≥ 85% → Auto-matched
-  60–84% → Needs human review
-  < 60% → Exception
-```
-
----
-
 ## 🌐 Free APIs Used
 
 ### fawazahmed0 Exchange API
