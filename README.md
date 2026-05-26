@@ -45,12 +45,18 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
+│                           INPUTS                                │
+│  Invoice PDFs / Images            Bank Statement CSV            │
+└──────────────┬──────────────────────────────┬──────────────────┘
+      │                              │
+      ▼                              ▼
+┌─────────────────────────────────────────────────────────────────┐
 │                    MCP ORCHESTRATOR AGENT                       │
 │         Decides which tools to call and in what order           │
 │         Handles retries, skips, and edge case routing           │
 └──────┬──────────────┬──────────────┬──────────────┬────────────┘
-       │              │              │              │
-       ▼              ▼              ▼              ▼
+    │              │              │              │
+    ▼              ▼              ▼              ▼
   ┌─────────┐   ┌──────────┐  ┌──────────┐  ┌──────────────┐
   │  MCP    │   │  MCP     │  │  MCP     │  │  MCP         │
   │ Tool 1  │   │ Tool 2   │  │ Tool 3   │  │ Tool 4       │
@@ -63,70 +69,73 @@
   │Scout    │   │          │  │HISTORICAL│  │(LLM)         │
   │Vision   │   │          │  │FX DATE   │  │              │
   └────┬────┘   └────┬─────┘  └────┬─────┘  └──────┬───────┘
-       │              │              │               │
-       └──────────────┴──────────────┴───────────────┘
-                                │
-                                ▼
-              ┌─────────────────────────────────────┐
-              │          MCP Tool 5                 │
-              │        match_transaction            │
-              │        Pure Python — no LLM         │
-              │                                     │
-              │  3 MATCHING METRICS:                │
-              │                                     │
-              │  1. Transaction Amount  (40% weight)│
-              │     Invoice expected MYR vs         │
-              │     bank credit amount              │
-              │     ±2% FX tolerance band           │
-              │                                     │
-              │  2. Transaction Date    (30% weight)│
-              │     Invoice date vs bank txn date   │
-              │     scored by days apart (0–7 days) │
-              │                                     │
-              │  3. Reference Match     (30% weight)│
-              │     Invoice no + customer name vs   │
-              │     parsed_reference + parsed_      │
-              │     customer (rapidfuzz ratio)      │
-              │                                     │
-              │  → Confidence score 0–100%          │
-              └────────────┬────────────────────────┘
-                           │
-                           ▼
-              ┌─────────────────────────────────────┐
-              │          MCP Tool 6                 │
-              │       classify_exception            │
-              │       Chutes DeepSeek V3            │
-              │                                     │
-              │  Explains the match in plain        │
-              │  English regardless of score:       │
-              │  · Confidence score + breakdown     │
-              │  · Amount gap / FX variance         │
-              │  · Reference match strength         │
-              │  · Split / combined payment signal  │
-              └────────────┬────────────────────────┘
-                           │
-                           ▼
-              ┌─────────────────────────────────────┐
-              │           Human Review              │
-              │         /review dashboard           │
-              │                                     │
-              │   Human ALWAYS makes the final      │
-              │   decision regardless of score.     │
-              │   Agent assists, human decides.     │
-              │                                     │
-              │         Approve / Reject            │
-              └────────────┬────────────────────────┘
-                                        │
-                                        ▼
-                             ┌──────────────────────┐
-                             │  Supabase audit log  │
-                             │  Every MCP tool call │
-                             │  logged with:        │
-                             │  · tool name         │
-                             │  · model used        │
-                             │  · inputs + outputs  │
-                             │  · timestamp         │
-                             └──────────────────────┘
+    │              │              │               │
+    └──────────────┴──────────────┴───────────────┘
+              │
+              ▼
+        ┌─────────────────────────────────────┐
+        │          MCP Tool 5                 │
+        │        match_transaction            │
+        │        Pure Python — no LLM         │
+        │                                     │
+        │  3 MATCHING METRICS:                │
+        │                                     │
+        │  1. Transaction Amount  (40% weight)│
+        │     Invoice expected MYR vs         │
+        │     bank credit amount              │
+        │     ±2% FX tolerance band           │
+        │                                     │
+        │  2. Transaction Date    (30% weight)│
+        │     Invoice date vs bank txn date   │
+        │     scored by days apart (0–7 days) │
+        │                                     │
+        │  3. Reference Match     (30% weight)│
+        │     Invoice no + customer name vs   │
+        │     parsed_reference + parsed_      │
+        │     customer (rapidfuzz ratio)      │
+        │                                     │
+        │  → Confidence score 0–100%          │
+        └────────────┬────────────────────────┘
+            │
+            ▼
+        ┌─────────────────────────────────────┐
+        │        Reconciliation Engine        │
+        │  · Plain-English explanation        │
+        │  · Confidence breakdown             │
+        │  · Amount gap + FX variance         │
+        │  · Reference match strength         │
+        │  · Split / combined payment signal  │
+        └────────────┬────────────────────────┘
+            │
+            ▼
+        ┌─────────────────────────────────────┐
+        │          MCP Tool 6                 │
+        │       classify_exception            │
+        │       Chutes DeepSeek V3            │
+        └────────────┬────────────────────────┘
+            │
+            ▼
+        ┌─────────────────────────────────────┐
+        │           Human Review              │
+        │         /review dashboard           │
+        │                                     │
+        │   Human ALWAYS makes the final      │
+        │   decision regardless of score.     │
+        │   Agent assists, human decides.     │
+        │                                     │
+        │         Approve / Reject            │
+        └────────────┬────────────────────────┘
+                │
+                ▼
+              ┌──────────────────────┐
+              │  Supabase audit log  │
+              │  Every MCP tool call │
+              │  logged with:        │
+              │  · tool name         │
+              │  · model used        │
+              │  · inputs + outputs  │
+              │  · timestamp         │
+              └──────────────────────┘
 ```
 
 ### Core Principle
