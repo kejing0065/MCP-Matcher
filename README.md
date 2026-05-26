@@ -47,61 +47,95 @@ Multiply this by 50–200 invoices per month. That's **3+ hours of manual work**
 
 ---
 
+ 
 ## 🏗 Architecture
-
+ 
 ```
-Invoice (PDF/image)          Bank Statement (CSV)
-        │                            │
-        ▼                            ▼
-┌─────────────────┐      ┌────────────────────┐
-│ extract_document│      │  parse_bank_csv    │
-│  Groq Llama 4   │      │     Pandas         │
-│  Scout Vision   │      └────────┬───────────┘
-└────────┬────────┘               │
-         │                        ▼
-         │              ┌────────────────────┐
-         │              │parse_bank_desc     │
-         │              │  Chutes DeepSeek   │
-         │              │  V3 (LLM)          │
-         │              └────────┬───────────┘
-         │                       │
-         ▼                       │
-┌─────────────────┐              │
-│convert_currency │              │
-│ fawazahmed0 API │◄─────────────┘
-│ (payment date)  │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────────────────────────┐
-│         match_transaction           │
-│  Pure Python — no LLM              │
-│  Amount (40%) + Date (30%)         │
-│  + Reference fuzzy match (30%)     │
-│  → Confidence score 0–100%         │
-└────────┬────────────────┬───────────┘
-         │                │
-    ≥ 85%│           < 85%│
-         ▼                ▼
-  ┌──────────┐    ┌───────────────────┐
-  │  Auto-   │    │ classify_exception│
-  │ Matched  │    │  Chutes LLM       │
-  └──────────┘    │  explains why     │
-                  └────────┬──────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    MCP ORCHESTRATOR AGENT                       │
+│         Decides which tools to call and in what order           │
+│         Handles retries, skips, and edge case routing           │
+└──────┬──────────────┬──────────────┬──────────────┬────────────┘
+       │              │              │              │
+       ▼              ▼              ▼              ▼
+  ┌─────────┐   ┌──────────┐  ┌──────────┐  ┌──────────────┐
+  │  MCP    │   │  MCP     │  │  MCP     │  │  MCP         │
+  │ Tool 1  │   │ Tool 2   │  │ Tool 3   │  │ Tool 4       │
+  │         │   │          │  │          │  │              │
+  │extract_ │   │parse_    │  │convert_  │  │parse_bank_   │
+  │document │   │bank_csv  │  │currency  │  │description   │
+  │         │   │          │  │          │  │              │
+  │Groq     │   │Pandas    │  │fawazahmed│  │Chutes        │
+  │Llama 4  │   │(Python)  │  │0 API     │  │DeepSeek V3   │
+  │Scout    │   │          │  │HISTORICAL│  │(LLM)         │
+  │Vision   │   │          │  │FX DATE   │  │              │
+  └────┬────┘   └────┬─────┘  └────┬─────┘  └──────┬───────┘
+       │              │              │               │
+       └──────────────┴──────────────┴───────────────┘
+                                │
+                                ▼
+              ┌─────────────────────────────────────┐
+              │          MCP Tool 5                 │
+              │        match_transaction            │
+              │        Pure Python — no LLM         │
+              │                                     │
+              │  3 MATCHING METRICS:                │
+              │                                     │
+              │  1. Transaction Amount  (40% weight)│
+              │     Invoice expected MYR vs         │
+              │     bank credit amount              │
+              │     ±2% FX tolerance band           │
+              │                                     │
+              │  2. Transaction Date    (30% weight)│
+              │     Invoice date vs bank txn date   │
+              │     scored by days apart (0–7 days) │
+              │                                     │
+              │  3. Reference Match     (30% weight)│
+              │     Invoice no + customer name vs   │
+              │     parsed_reference + parsed_      │
+              │     customer (rapidfuzz ratio)      │
+              │                                     │
+              │  → Confidence score 0–100%          │
+              └────────────┬────────────────────────┘
                            │
-                           ▼
-                  ┌─────────────────┐
-                  │  Human Review   │
-                  │  Approve/Reject │
-                  └────────┬────────┘
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │  Audit Trail    │
-                  │  Full timeline  │
-                  │  logged to DB   │
-                  └─────────────────┘
+               ┌───────────┴───────────┐
+          ≥ 85%│                  < 85%│
+               ▼                       ▼
+        ┌─────────────┐      ┌──────────────────────┐
+        │ Auto-Matched│      │     MCP Tool 6       │
+        │  Case closed│      │  classify_exception  │
+        │  No human   │      │  Chutes DeepSeek V3  │
+        │  needed     │      │                      │
+        └─────────────┘      │  Explains in plain   │
+                             │  English:            │
+                             │  · Amount gap reason │
+                             │  · FX variance note  │
+                             │  · Reference mismatch│
+                             │  · Split/combined    │
+                             │    payment detected  │
+                             └──────────┬───────────┘
+                                        │
+                                        ▼
+                             ┌──────────────────────┐
+                             │    Human Review      │
+                             │  /review dashboard   │
+                             │  Approve / Reject    │
+                             │  Human always        │
+                             │  decides < 85% cases │
+                             └──────────┬───────────┘
+                                        │
+                                        ▼
+                             ┌──────────────────────┐
+                             │  Supabase audit log  │
+                             │  Every MCP tool call │
+                             │  logged with:        │
+                             │  · tool name         │
+                             │  · model used        │
+                             │  · inputs + outputs  │
+                             │  · timestamp         │
+                             └──────────────────────┘
 ```
+ 
 
 ### Core Principle
 > **LLM explains. Python calculates. Rules decide. Human approves.**
