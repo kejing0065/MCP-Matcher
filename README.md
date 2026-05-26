@@ -7,13 +7,9 @@
 
 ## 🎯 The Problem
 
-Malaysian SMEs receive a bank notification: **MYR 468.20 received**. Their invoice was for **USD 100**. Manually reconciling this means:
-
-- Converting USD → MYR using today's rate (which may be wrong — the customer paid 3 days ago at a different rate)
-- Decoding the bank description: `IBFT CR 2605 MOHD RAZIF BIN AHMAD ABC TRADING INV1023`
-- Logging the match, variance, and FX rate used — by hand, in Excel
-
-Multiply this by 50–200 invoices per month. That's **3+ hours of manual work** every month-end, with no audit trail and constant false mismatches.
+- **Wrong FX rate** — Tools like Xero and QuickBooks compare against today's exchange rate, not the rate on the day the customer actually paid. Every cross-border payment shows a false mismatch even when the amount is perfectly correct.
+- **Manual matching wastes hours** — Finance staff manually scroll through hundreds of invoices to match each bank transaction one by one. A single monthly statement can take 3–4 hours to reconcile, every month-end, with no guarantee of accuracy.
+- **Complex payment patterns** — A customer pays one invoice in two transfers, or combines two invoices into one payment. Every existing tool marks these as unmatched with no explanation, leaving finance staff to figure it out manually.
 
 ---
 
