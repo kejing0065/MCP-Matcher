@@ -48,15 +48,15 @@
 │                           INPUTS                                │
 │  Invoice PDFs / Images            Bank Statement CSV            │
 └──────────────┬──────────────────────────────┬──────────────────┘
-      │                              │
-      ▼                              ▼
+               │                              │
+               ▼                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    MCP ORCHESTRATOR AGENT                       │
 │         Decides which tools to call and in what order           │
 │         Handles retries, skips, and edge case routing           │
 └──────┬──────────────┬──────────────┬──────────────┬────────────┘
-    │              │              │              │
-    ▼              ▼              ▼              ▼
+       │              │              │              │
+       ▼              ▼              ▼              ▼
   ┌─────────┐   ┌──────────┐  ┌──────────┐  ┌──────────────┐
   │  MCP    │   │  MCP     │  │  MCP     │  │  MCP         │
   │ Tool 1  │   │ Tool 2   │  │ Tool 3   │  │ Tool 4       │
@@ -69,10 +69,10 @@
   │Scout    │   │          │  │HISTORICAL│  │(LLM)         │
   │Vision   │   │          │  │FX DATE   │  │              │
   └────┬────┘   └────┬─────┘  └────┬─────┘  └──────┬───────┘
-    │              │              │               │
-    └──────────────┴──────────────┴───────────────┘
-              │
-              ▼
+      │              │              │               │
+      └──────────────┴──────────────┴───────────────┘
+                            │
+                            ▼
         ┌─────────────────────────────────────┐
         │          MCP Tool 5                 │
         │        match_transaction            │
@@ -96,8 +96,8 @@
         │                                     │
         │  → Confidence score 0–100%          │
         └────────────┬────────────────────────┘
-            │
-            ▼
+                     │
+                     ▼
         ┌─────────────────────────────────────┐
         │        Reconciliation Engine        │
         │  · Plain-English explanation        │
@@ -106,15 +106,15 @@
         │  · Reference match strength         │
         │  · Split / combined payment signal  │
         └────────────┬────────────────────────┘
-            │
-            ▼
+                     │
+                     ▼
         ┌─────────────────────────────────────┐
         │          MCP Tool 6                 │
         │       classify_exception            │
         │       Chutes DeepSeek V3            │
         └────────────┬────────────────────────┘
-            │
-            ▼
+                     │
+                     ▼
         ┌─────────────────────────────────────┐
         │           Human Review              │
         │         /review dashboard           │
@@ -125,8 +125,8 @@
         │                                     │
         │         Approve / Reject            │
         └────────────┬────────────────────────┘
-                │
-                ▼
+                     │
+                     ▼
               ┌──────────────────────┐
               │  Supabase audit log  │
               │  Every MCP tool call │
