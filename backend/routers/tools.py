@@ -128,6 +128,9 @@ async def parse_bank_csv(file: UploadFile = File(...)):
     # Convert credit to numeric, coerce errors to NaN
     df["credit"] = pd.to_numeric(df["credit"], errors="coerce")
 
+    # Drop opening balance rows by description (case-insensitive)
+    df = df[~df["description"].fillna("").str.strip().str.lower().eq("opening balance")]
+
     # Only keep incoming (credit > 0)
     df = df[df["credit"] > 0].dropna(subset=["credit"])
 
