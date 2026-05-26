@@ -4,7 +4,6 @@ import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Toast, { showToast } from "@/components/Toast";
 import { setUploadProgress } from "@/lib/uploadStore";
-import type { ScenarioType } from "@/lib/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -83,7 +82,6 @@ async function runMultiUpload(invoices: File[], csv: File) {
       invoicesExtracted: invoices.length,
     });
 
-    let scenarioType: ScenarioType | undefined;
     let matchResultId: string | undefined;
     let groupId: string | undefined;
 
@@ -103,7 +101,6 @@ async function runMultiUpload(invoices: File[], csv: File) {
       }
       const data = await r3.json();
       matchResultId = data.match_result_id;
-      scenarioType = data.scenario_type;
     } else {
       // Multi-invoice path
       const r3 = await fetch(`${API}/reconcile/multi`, {
@@ -121,7 +118,6 @@ async function runMultiUpload(invoices: File[], csv: File) {
       const data = await r3.json();
       groupId = data.group_id;
       matchResultId = data.match_result_ids?.[0];
-      scenarioType = data.scenario_type;
     }
 
     setUploadProgress({
@@ -131,20 +127,8 @@ async function runMultiUpload(invoices: File[], csv: File) {
       invoicesExtracted: invoices.length,
       matchResultId,
       groupId,
-      scenarioType,
     });
-
-    const scenarioLabels: Record<string, string> = {
-      s1_one_to_one: "Standard match",
-      s2_split: "Split payment detected",
-      s3_consolidated: "Consolidated payment detected",
-      s4_complex: "Complex batch detected",
-      s5_partial: "Partial payment detected",
-      s6_duplicate: "Duplicate payment flagged",
-      s8_bank_fee: "Bank fee deduction detected",
-    };
-    const label = scenarioType ? (scenarioLabels[scenarioType] ?? "Reconciliation complete") : "Reconciliation complete";
-    showToast({ type: "success", message: `✓ ${label}` });
+    showToast({ type: "success", message: "✓ Reconciliation complete" });
     setTimeout(() => setUploadProgress(null), 3000);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Unknown error";
@@ -226,7 +210,7 @@ function FileDropZone({
             </div>
             {multiple && (
               <div className="text-[11px] text-neutral-600 mt-1">
-                Supports multiple files for split / consolidated scenarios
+                Supports multiple invoice files
               </div>
             )}
           </>
@@ -276,35 +260,6 @@ function FileDropZone({
   );
 }
 
-// ─── Scenario hint helper ─────────────────────────────────────────────────────
-
-function ScenarioHint({ invoiceCount }: { invoiceCount: number }) {
-  if (invoiceCount === 0) return null;
-
-  const hints: { scenario: string; when: string; color: string }[] = [
-    { scenario: "Standard (S1)", when: "1 invoice + matching transactions", color: "text-neutral-400" },
-    { scenario: "Split (S2)", when: "1 invoice + multiple partial payments", color: "text-blue-400" },
-    { scenario: "Consolidated (S3)", when: "Multiple invoices + 1 combined payment", color: "text-purple-400" },
-    { scenario: "Complex (S4)", when: "Multiple invoices + multiple transactions", color: "text-indigo-400" },
-  ];
-
-  const hint = invoiceCount === 1 ? hints[0] : hints[2];
-
-  return (
-    <div className="rounded-md p-3 bg-[#0d1117] border border-[#21262d] text-[11px]">
-      <p className="text-neutral-500 font-medium mb-1">Scenario detection</p>
-      <p className="text-neutral-400">
-        With <span className="font-bold text-white">{invoiceCount}</span> invoice{invoiceCount !== 1 ? "s" : ""},
-        the system will detect:{" "}
-        <span className={`font-semibold ${hint.color}`}>{hint.scenario}</span>
-        {invoiceCount > 1 && (
-          <span className="text-neutral-500"> or complex batch</span>
-        )}.
-      </p>
-    </div>
-  );
-}
-
 // ─── Main Upload Page ─────────────────────────────────────────────────────────
 
 export default function UploadPage() {
@@ -340,14 +295,14 @@ export default function UploadPage() {
               Upload invoices and let the matcher align every transaction.
             </h2>
             <p className="mt-3 text-[13px] text-neutral-400 max-w-[520px]">
-              Drop PDF or image invoices plus a bank CSV to start. The engine detects
-              split, consolidated, and complex scenarios while you keep reviewing.
+              Drop PDF or image invoices plus a bank CSV to start. The engine will reconcile
+              and prepare cases for review while you keep working.
             </p>
 
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
               {[
                 { title: "Smart extraction", desc: "OCR + structured fields" },
-                { title: "Scenario routing", desc: "S1–S6 + bank fee" },
+                { title: "Matching engine", desc: "Automated reconciliation" },
                 { title: "Live progress", desc: "Background processing" },
                 { title: "Review-ready", desc: "Decisions stay audit-safe" },
               ].map((item) => (
@@ -381,12 +336,8 @@ export default function UploadPage() {
             <div>
               <h3 className="text-[15px] font-semibold text-white">Upload Reconciliation Batch</h3>
               <p className="text-[12px] text-neutral-400 mt-1">
-                We will route results to your pending review queue automatically.
+                Results will appear in your pending review queue automatically.
               </p>
-            </div>
-
-            <div className="mt-5">
-              <ScenarioHint invoiceCount={invoices.length} />
             </div>
 
             <div className="mt-4 flex flex-col gap-4">
@@ -409,24 +360,6 @@ export default function UploadPage() {
               />
             </div>
 
-            {ready && invoices.length > 1 && (
-              <div className="mt-4 flex flex-wrap gap-1.5">
-                {[
-                  { label: "Split", color: "text-blue-400 border-blue-800/40 bg-blue-950/20" },
-                  { label: "Consolidated", color: "text-purple-400 border-purple-800/40 bg-purple-950/20" },
-                  { label: "Complex", color: "text-indigo-400 border-indigo-800/40 bg-indigo-950/20" },
-                  { label: "Partial", color: "text-amber-400 border-amber-800/40 bg-amber-950/20" },
-                  { label: "Duplicate detection", color: "text-red-400 border-red-800/40 bg-red-950/20" },
-                ].map((b) => (
-                  <span
-                    key={b.label}
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${b.color}`}
-                  >
-                    {b.label}
-                  </span>
-                ))}
-              </div>
-            )}
 
             <button
               disabled={!ready}
