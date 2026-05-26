@@ -2,7 +2,6 @@
 
 > **Cross-border payment reconciliation for Malaysian SMEs — powered by AI agents and MCP tools.**
 
-
 ---
 
 ## 🎯 The Problem
@@ -10,8 +9,6 @@
 - **Complex payment patterns** — A customer pays one invoice in two transfers, or combines two invoices into one payment. Every existing tool marks these as unmatched with no explanation, leaving finance staff to figure it out manually.
 - **Manual matching wastes hours** — Finance staff manually scroll through hundreds of invoices to match each bank transaction one by one. A single monthly statement can take 3–4 hours to reconcile, every month-end, with no guarantee of accuracy.
 - **Wrong FX rate** — Tools like Xero and QuickBooks compare against today's exchange rate, not the rate on the day the customer actually paid. Every cross-border payment shows a false mismatch even when the amount is perfectly correct.
-
-
 
 ---
 
@@ -30,23 +27,22 @@
 
 ## 🆚 Why Not Just Use Excel / SQL Accounting / Xero?
 
-| Feature | Excel | SQL Accounting | Xero / QuickBooks | **Global Treasury Agent** |
-|---|---|---|---|---|
-| Historical FX rate matching | ✗ Manual | ✗ None | ✗ Today's rate only | ✅ Payment date rate |
-| Malaysian bank desc. parsing | ✗ Manual | ✗ Manual | ✗ Not supported | ✅ Auto-parsed (DuitNow, IBFT, IBG, TT) |
-| Split payment detection | ✗ No | ✗ No | ✗ No | ✅ Flagged with explanation |
-| Combined invoice detection | ✗ No | ✗ No | ✗ No | ✅ Flagged with explanation |
-| Exception explanation | ✗ None | ✗ None | ✗ Binary only | ✅ Plain English reason |
-| Full audit trail | ✗ None | ✗ Basic | ✓ Basic | ✅ Full agent timeline |
-| Cost | Free | ~RM 1,800/yr | ~RM 2,400/yr | ✅ Free APIs |
+| Feature                      | Excel    | SQL Accounting | Xero / QuickBooks   | **Global Treasury Agent**               |
+| ---------------------------- | -------- | -------------- | ------------------- | --------------------------------------- |
+| Historical FX rate matching  | ✗ Manual | ✗ None         | ✗ Today's rate only | ✅ Payment date rate                    |
+| Malaysian bank desc. parsing | ✗ Manual | ✗ Manual       | ✗ Not supported     | ✅ Auto-parsed (DuitNow, IBFT, IBG, TT) |
+| Split payment detection      | ✗ No     | ✗ No           | ✗ No                | ✅ Flagged with explanation             |
+| Combined invoice detection   | ✗ No     | ✗ No           | ✗ No                | ✅ Flagged with explanation             |
+| Exception explanation        | ✗ None   | ✗ None         | ✗ Binary only       | ✅ Plain English reason                 |
+| Full audit trail             | ✗ None   | ✗ Basic        | ✓ Basic             | ✅ Full agent timeline                  |
+| Cost                         | Free     | ~RM 1,800/yr   | ~RM 2,400/yr        | ✅ Free APIs                            |
 
 **The core insight:** Xero creates false mismatches every time FX rates move between payment date and today. SQL Accounting makes your finance staff manually drag-and-match every single bank transaction. We solve both.
 
 ---
 
- 
 ## 🏗 Architecture
- 
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    MCP ORCHESTRATOR AGENT                       │
@@ -132,9 +128,9 @@
                              │  · timestamp         │
                              └──────────────────────┘
 ```
- 
 
 ### Core Principle
+
 > **LLM Analyst. LLM Match. LLM explains. Python calculates. Rules decide. Human approves.**
 
 ---
@@ -142,25 +138,30 @@
 ## 🛠 Tech Stack
 
 ### Frontend
-- **Next.js 14** (App Router) — React framework
+
+- **Next.js 16** (App Router) — React framework
+- **React 19** — UI library
 - **Tailwind CSS** — utility-first styling
-- **shadcn/ui** — component library
 - **Recharts** — data visualisation
 
 ### Backend
+
 - **FastAPI** (Python) — REST API
 - **Pandas** — bank CSV parsing
 - **Pydantic** — data validation
 - **rapidfuzz** — fuzzy string matching for reference comparison
 
 ### AI / LLM
-- **Groq** (`meta-llama/llama-4-scout-17b-16e-instruct`) — invoice vision extraction
-- **Chutes** (`deepseek-ai/DeepSeek-V3-0324`) — bank description parsing + exception explanation
+
+- **Groq** (`meta-llama/llama-4-scout-17b-16e-instruct`) — invoice extraction (PDF text + OCR)
+- **Chutes** (`deepseek-ai/DeepSeek-V3.2-TEE`) — bank description parsing + exception explanation
 
 ### Database
+
 - **Supabase** (PostgreSQL) — stores invoices, transactions, match results, audit logs
 
 ### Free APIs
+
 - **fawazahmed0 Exchange API** — historical FX rates by date, no API key required
 
 ---
@@ -169,14 +170,14 @@
 
 The agent exposes 6 MCP tools that the orchestrator calls based on context:
 
-| Tool | Purpose | Model / Library |
-|---|---|---|
-| `extract_document` | Invoice image/PDF → structured JSON | Groq Llama 4 Scout |
-| `parse_bank_csv` | Bank CSV → list of credit transactions | Pandas |
-| `convert_currency` | Foreign amount → MYR using historical rate | fawazahmed0 API |
-| `parse_bank_description` | Messy bank text → customer + reference | Chutes DeepSeek V3 |
-| `match_transaction` | Score invoice vs transactions (0–100%) | Pure Python |
-| `classify_exception` | Explain why match failed in plain English | Chutes DeepSeek V3 |
+| Tool                     | Purpose                                    | Model / Library    |
+| ------------------------ | ------------------------------------------ | ------------------ |
+| `extract_document`       | Invoice image/PDF → structured JSON        | Groq Llama 4 Scout |
+| `parse_bank_csv`         | Bank CSV → list of credit transactions     | Pandas             |
+| `convert_currency`       | Foreign amount → MYR using historical rate | fawazahmed0 API    |
+| `parse_bank_description` | Messy bank text → customer + reference     | Chutes DeepSeek V3 |
+| `match_transaction`      | Score invoice vs transactions (0–100%)     | Pure Python        |
+| `classify_exception`     | Explain why match failed in plain English  | Chutes DeepSeek V3 |
 
 ### Why MCP Instead of a Fixed Function Chain?
 
@@ -194,27 +195,23 @@ This means the agent handles edge cases — split payments, combined invoices, m
 ## 📁 Project Structure
 
 ```
-global-treasury-agent/
-├── frontend/                     # Next.js 14
+TAgent/
+├── frontend/                     # Next.js 16
 │   ├── app/
 │   │   ├── page.tsx              # Upload page (/)
 │   │   ├── review/page.tsx       # Review page (/review)
 │   │   ├── history/page.tsx      # History page (/history)
-│   │   ├── dashboard/page.tsx    # Dashboard (/dashboard)
 │   │   └── globals.css
 │   ├── components/
-│   │   ├── Navbar.tsx
 │   │   ├── PendingQueue.tsx
 │   │   ├── CaseDetail.tsx
 │   │   ├── ConfidenceBreakdown.tsx
 │   │   ├── AuditTrail.tsx
 │   │   ├── HistoryTable.tsx
-│   │   ├── AutoMatchedToday.tsx
-│   │   └── ui/
-│   │       ├── Badge.tsx
-│   │       ├── Card.tsx
-│   │       ├── ConfPill.tsx
-│   │       └── Toast.tsx
+│   │   ├── GroupDetail.tsx
+│   │   ├── Sidebar.tsx
+│   │   ├── StatusBadge.tsx
+│   │   └── Toast.tsx
 │   └── lib/
 │       ├── api.ts
 │       └── types.ts
@@ -227,7 +224,9 @@ global-treasury-agent/
 │   │   ├── tools.py              # 6 MCP tool endpoints
 │   │   └── reconcile.py          # Orchestrator + dashboard
 │   ├── services/
-│   │   ├── vision.py             # Groq invoice extraction
+│   │   ├── groq_extractor.py     # Groq invoice extraction
+│   │   ├── ocr_extractor.py      # Local OCR fallback
+│   │   ├── gemini.py             # Legacy Groq vision path
 │   │   ├── fx.py                 # fawazahmed0 FX API
 │   │   ├── chutes.py             # Chutes LLM client
 │   │   └── matcher.py            # Pure Python scoring
@@ -237,70 +236,24 @@ global-treasury-agent/
 │       └── schemas.py
 │
 └── supabase_schema.sql           # Run this in Supabase SQL editor
+└── supabase_migration_multi_scenario.sql  # Multi-scenario extension
 ```
 
 ---
 
 ## 🗄 Database Schema
 
-```sql
--- Invoices extracted from uploaded PDFs/images
-create table invoices (
-  id            uuid primary key default gen_random_uuid(),
-  invoice_no    text,
-  customer      text,
-  amount        numeric,
-  currency      text,
-  invoice_date  date,
-  expected_myr  numeric,
-  fx_rate       numeric,
-  fx_date       date,
-  created_at    timestamptz default now()
-);
+Run the SQL files in this order:
 
--- Credit transactions parsed from bank CSV
-create table bank_transactions (
-  id                uuid primary key default gen_random_uuid(),
-  transaction_date  date,
-  description       text,
-  parsed_customer   text,
-  parsed_reference  text,
-  credit_amount     numeric,
-  created_at        timestamptz default now()
-);
-
--- Match results produced by the agent
-create table match_results (
-  id                      uuid primary key default gen_random_uuid(),
-  invoice_id              uuid references invoices(id),
-  bank_transaction_id     uuid references bank_transactions(id),
-  confidence              numeric,
-  status                  text,   -- matched | review | exception
-  variance                numeric,
-  variance_pct            numeric,
-  reason                  text,
-  exception_type          text,
-  exception_explanation   text,
-  human_decision          text,   -- approved | rejected | null
-  created_at              timestamptz default now()
-);
-
--- Full agent action log for audit trail
-create table agent_logs (
-  id                uuid primary key default gen_random_uuid(),
-  invoice_id        uuid references invoices(id),
-  match_result_id   uuid references match_results(id),
-  action            text,
-  detail            text,
-  created_at        timestamptz default now()
-);
-```
+1. [supabase_schema.sql](supabase_schema.sql) — base tables
+2. [supabase_migration_multi_scenario.sql](supabase_migration_multi_scenario.sql) — multi-scenario fields and `match_groups`
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
+
 - Node.js 18+
 - Python 3.10+
 - Supabase account (free tier)
@@ -310,8 +263,8 @@ create table agent_logs (
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/your-username/global-treasury-agent.git
-cd global-treasury-agent
+git clone https://github.com/JokerHin/MCP-Matcher
+cd TAgent
 ```
 
 ### 2. Backend setup
@@ -319,25 +272,28 @@ cd global-treasury-agent
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+source venv/bin/activate        # Windows (PowerShell): .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
 Copy `.env.example` to `.env` and fill in your keys:
 
 ```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_anon_key
-GROQ_API_KEY=your_groq_api_key
-CHUTES_API_KEY=your_chutes_api_key
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-supabase-service-role-key
+GROQ_API_KEY=your-groq-api-key
+CHUTES_API_KEY=your-chutes-api-key
 ```
 
 Run the database schema in your Supabase SQL Editor:
+
 ```bash
-# Copy contents of supabase_schema.sql and run in Supabase dashboard
+# 1) Run supabase_schema.sql
+# 2) Run supabase_migration_multi_scenario.sql
 ```
 
 Start the backend:
+
 ```bash
 uvicorn main:app --reload
 # Runs on http://localhost:8000
@@ -359,6 +315,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 Start the frontend:
+
 ```bash
 npm run dev
 # Runs on http://localhost:3000
@@ -366,45 +323,31 @@ npm run dev
 
 ### 4. Windows users — Poppler for PDF support
 
+Poppler is required for `pdf2image` (used by the legacy Groq vision path in [backend/services/gemini.py](backend/services/gemini.py)).
 Download Poppler from [oschwartz10612/poppler-windows](https://github.com/oschwartz10612/poppler-windows/releases), extract, and add the `bin/` folder to your system PATH.
 
 ---
 
 ## 🧪 Test Data
 
-Sample test files are included in `/test-data/`:
-
-### High confidence test (should auto-match ≥85%)
-| File | Invoice | Expected bank match |
-|---|---|---|
-| `invoice_INV1023_USD100.pdf` | USD 100 · ABC Pte Ltd | `IBFT CR ABC PTE LTD INV-1023` · MYR 468.20 |
-| `invoice_INV1024_SGD260.pdf` | SGD 260 · XYZ Trading | `DUITNOW CR XYZ TRADING PTE LTD INV-1024` · MYR 887.60 |
-| `invoice_INV1025_USD500.pdf` | USD 500 · Tech Ventures | `IBG CREDIT TECH VENTURES INC INV-1025` · MYR 2341.10 |
-| `bank_statement_high_confidence.csv` | All three above | — |
-
-### Complex scenario test (should go to human review)
-| File | Scenario | What the agent should detect |
-|---|---|---|
-| `scenario_A_INV2001_USD300.pdf` | 1 invoice, 2 transactions | Split payment — MYR 703.20 + MYR 703.50 = MYR 1406.70 |
-| `scenario_B_INV2002_USD80.pdf` + `scenario_B_INV2003_USD120.pdf` | 2 invoices, 1 transaction | Combined payment — MYR 938.00 covers both |
-| `bank_statement_complex.csv` | Both scenarios above | — |
+Use [sample_bank.csv](sample_bank.csv) as a simple starter bank statement for local testing.
 
 ---
 
 ## 📱 Pages
 
-| Route | Description |
-|---|---|
-| `/` | Upload invoice (PDF/image) and bank statement (CSV) |
-| `/review` | Two-column review — pending queue left, case detail right |
+| Route      | Description                                                  |
+| ---------- | ------------------------------------------------------------ |
+| `/`        | Upload invoice (PDF/image) and bank statement (CSV)          |
+| `/review`  | Two-column review — pending queue left, case detail right    |
 | `/history` | Decision history with Approved/Rejected tabs and audit trail |
-| `/dashboard` | Stats overview and reconciliation chart |
 
 ---
 
 ## 🌐 Free APIs Used
 
 ### fawazahmed0 Exchange API
+
 ```
 Primary:  https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{date}/v1/currencies/{base}.json
 Fallback: https://{date}.currency-api.pages.dev/v1/currencies/{base}.json
@@ -413,6 +356,7 @@ Example:
 GET .../currency-api@2026-05-20/v1/currencies/usd.json
 → { "usd": { "myr": 4.6820, ... } }
 ```
+
 - No API key required
 - Updated daily
 - Historical dates supported (use YYYY-MM-DD)
@@ -423,6 +367,7 @@ GET .../currency-api@2026-05-20/v1/currencies/usd.json
 ## 👥 Target Audience
 
 **Malaysian SME finance teams** who:
+
 - Receive 20–200 cross-border invoices per month in USD, SGD, EUR, IDR
 - Currently reconcile manually in Excel or SQL Accounting
 - Spend 2–4 hours per month-end on bank reconciliation
