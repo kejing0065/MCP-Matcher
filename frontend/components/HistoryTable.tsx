@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import type { AgentLog, MatchResult } from "@/lib/types";
+import type { AgentLog, MatchGroup, MatchResult } from "@/lib/types";
 import { getAgentLogs } from "@/lib/api";
 import AuditTrail from "./AuditTrail";
 import ConfidenceBreakdown from "./ConfidenceBreakdown";
@@ -9,6 +9,7 @@ import ScenarioBadge from "./ScenarioBadge";
 
 interface HistoryTableProps {
   results: MatchResult[];
+  groups?: MatchGroup[];
   activeTab: "all" | "approved" | "rejected" | "partial";
 }
 
@@ -103,9 +104,11 @@ function HistoryAuditLogs({
 
 export default function HistoryTable({
   results,
+  groups = [],
   activeTab,
 }: HistoryTableProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   const [expandedView, setExpandedView] = useState<"audit" | "invoice">(
     "audit",
   );
@@ -117,7 +120,14 @@ export default function HistoryTable({
     return r.human_decision != null;
   });
 
-  if (filtered.length === 0) {
+  const filteredGroups = groups.filter((g) => {
+    if (activeTab === "approved") return g.human_decision === "approved";
+    if (activeTab === "rejected") return g.human_decision === "rejected";
+    if (activeTab === "partial") return g.human_decision === "partial";
+    return g.human_decision != null;
+  });
+
+  if (filtered.length === 0 && filteredGroups.length === 0) {
     return (
       <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-12 text-center shadow-sm">
         <div className="text-3xl mb-2 text-neutral-500">📋</div>
@@ -144,6 +154,198 @@ export default function HistoryTable({
       </div>
 
       <div className="flex flex-col">
+        {filteredGroups.map((group, idx) => {
+          const isExpanded = expandedGroupId === group.id;
+          const isLast = idx === filteredGroups.length - 1 && filtered.length === 0;
+          const invoices = group.invoices ?? [];
+          const transactions = group.bank_transactions ?? [];
+          const variance = group.total_variance_myr ?? 0;
+          const conf = group.confidence ?? 0;
+          const invoiceLabel =
+            invoices.length > 1
+              ? `Group (${invoices.length})`
+              : invoices[0]?.invoice_no ?? "Group";
+          const customerLabel =
+            invoices.map((inv) => inv.customer).filter(Boolean).join(", ") ||
+            "—";
+          const amountLabel =
+            group.total_received_myr != null
+              ? `MYR ${group.total_received_myr.toFixed(2)}`
+              : "—";
+
+          return (
+            <React.Fragment key={group.id}>
+              <div
+                onClick={() => {
+                  if (isExpanded) {
+                    setExpandedGroupId(null);
+                  } else {
+                    setExpandedGroupId(group.id);
+                    setExpandedId(null);
+                  }
+                }}
+                className={`flex items-center gap-3 px-4 py-3.5 hover:bg-[#21262d]/50 transition-colors cursor-pointer select-none ${
+                  isLast && !isExpanded ? "" : "border-b border-[#21262d]/50"
+                }`}
+              >
+                <div className="w-20 shrink-0 text-[13px] font-semibold text-white truncate text-left">
+                  {invoiceLabel}
+                </div>
+                <div className="flex-1 text-[12px] text-neutral-400 truncate text-left">
+                  {customerLabel}
+                </div>
+                <div className="w-[90px] shrink-0 font-mono text-[12px] text-white text-right truncate">
+                  {amountLabel}
+                </div>
+                <div className="w-[90px] shrink-0 flex justify-center">
+                  <ScenarioBadge scenarioType={group.scenario_type} size="xs" />
+                </div>
+                <div
+                  className={`w-20 shrink-0 font-mono text-[12px] text-right font-bold ${variance >= 0 ? "text-green-500" : "text-red-500"}`}
+                >
+                  {variance >= 0 ? "+" : ""}MYR {variance.toFixed(2)}
+                </div>
+                <div className="w-[80px] shrink-0 flex justify-center">
+                  <span
+                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold border inline-block ${
+                      group.human_decision === "approved"
+                        ? "text-green-500 bg-green-950/40 border-green-800/40"
+                        : group.human_decision === "partial"
+                          ? "text-amber-500 bg-amber-950/40 border-amber-800/40"
+                          : "text-red-500 bg-red-950/40 border-red-800/40"
+                    }`}
+                  >
+                    {group.human_decision === "approved"
+                      ? "✓ Approved"
+                      : group.human_decision === "partial"
+                        ? "◑ Partial"
+                        : "✕ Rejected"}
+                  </span>
+                </div>
+                <div className="w-20 shrink-0 text-right text-[11px] text-neutral-500 font-medium">
+                  {timeAgo(group.human_decision_at || group.created_at)}
+                </div>
+              </div>
+
+              {isExpanded && (
+                <div
+                  className={`bg-[#0d1117]/80 p-5 px-6 border-b border-[#21262d] relative ${
+                    isLast ? "rounded-b-lg border-b-0" : ""
+                  }`}
+                >
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedGroupId(null);
+                    }}
+                    className="absolute top-4 right-4 text-neutral-500 hover:text-white transition-colors text-xs p-1 hover:bg-[#21262d] rounded cursor-pointer"
+                  >
+                    ✕
+                  </button>
+
+                  <div className="mb-4 text-left">
+                    <h3 className="text-[15px] font-semibold text-white">
+                      {invoiceLabel} — group details
+                    </h3>
+                    <p className="text-[12px] text-neutral-400 mt-0.5 font-medium">
+                      {customerLabel}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="text-[12px] text-neutral-400">
+                      Coverage: {displayValue(group.coverage_pct?.toFixed(1))}%
+                    </div>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[12px] font-bold font-mono border ${confBadge(conf)} shrink-0`}
+                    >
+                      {Math.round(conf)}% conf
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-[14px]">
+                    <div className="p-3.5 rounded-md border border-[#30363d] bg-[#0d1117]">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                        Invoices
+                      </p>
+                      {invoices.length === 0 ? (
+                        <p className="text-[12px] text-neutral-500">No invoices</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {invoices.map((inv) => (
+                            <div key={inv.id ?? inv.invoice_no} className="rounded-md border border-[#21262d]/60 bg-[#0b1118] p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-[12px] text-neutral-200 font-semibold">
+                                  {inv.invoice_no ?? "INV-????"}
+                                </p>
+                                <p className="text-[11px] text-neutral-400 font-mono">
+                                  {inv.currency ?? ""} {inv.amount?.toFixed(2) ?? "—"}
+                                </p>
+                              </div>
+                              <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+                                <div className="text-neutral-500">Customer</div>
+                                <div className="text-neutral-200 text-right">
+                                  {inv.customer ?? "—"}
+                                </div>
+                                <div className="text-neutral-500">Expected MYR</div>
+                                <div className="text-blue-400 text-right">
+                                  {inv.expected_myr?.toFixed(2) ?? "—"}
+                                </div>
+                                <div className="text-neutral-500">Invoice date</div>
+                                <div className="text-neutral-200 text-right">
+                                  {inv.invoice_date ?? "—"}
+                                </div>
+                                <div className="text-neutral-500">Reference</div>
+                                <div className="text-neutral-200 text-right">
+                                  {inv.payment_reference ?? inv.invoice_no ?? "—"}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-3.5 rounded-md border border-[#30363d] bg-[#0d1117]">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                        Bank transactions
+                      </p>
+                      {transactions.length === 0 ? (
+                        <p className="text-[12px] text-neutral-500">No transactions</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {transactions.map((tx) => (
+                            <div key={tx.id} className="text-[12px]">
+                              <p className="text-neutral-200 font-semibold">
+                                MYR {tx.credit_amount?.toFixed(2) ?? "—"}
+                              </p>
+                              <p className="text-neutral-500">
+                                {tx.transaction_date ?? "—"} · {maskText(tx.description)}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {(group.exception_explanation || group.exception_type) && (
+                    <div className="rounded-md p-3 bg-amber-950/20 border border-amber-900/50 mt-4">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-1.5">
+                        Agent explanation
+                      </p>
+                      <p className="text-[12px] text-neutral-300 leading-relaxed">
+                        {group.exception_explanation ||
+                          displayValue(group.exception_type)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </React.Fragment>
+          );
+        })}
+
         {filtered.map((result, idx) => {
           const isExpanded = expandedId === result.id;
           const isLast = idx === filtered.length - 1;
@@ -182,6 +384,7 @@ export default function HistoryTable({
                   } else {
                     setExpandedId(result.id);
                     setExpandedView("audit");
+                    setExpandedGroupId(null);
                   }
                 }}
                 className={`flex items-center gap-3 px-4 py-3.5 hover:bg-[#21262d]/50 transition-colors cursor-pointer select-none ${

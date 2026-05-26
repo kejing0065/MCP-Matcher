@@ -125,7 +125,7 @@ export default function HistoryPage() {
 
         {/* History table component */}
         <div className="w-full">
-          <HistoryTable results={decided} activeTab={tab} />
+          <HistoryTable results={decided} groups={data?.groups ?? []} activeTab={tab} />
         </div>
       </div>
       <Toast />
