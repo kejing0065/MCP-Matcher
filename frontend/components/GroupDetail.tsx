@@ -76,6 +76,12 @@ function formatAmount(value?: number | null) {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function amountScoreFromVariance(expected?: number | null, variance?: number | null) {
+  if (!expected || expected <= 0 || variance == null || Number.isNaN(variance)) return null;
+  const variancePct = Math.abs(variance) / expected * 100;
+  return Math.max(0, 100 - variancePct * 10);
+}
+
 function breakdownSummary(breakdown?: { amount_score: number; date_score: number; reference_score: number; confidence: number } | null) {
   if (!breakdown) return null;
   const scores = [
@@ -86,7 +92,7 @@ function breakdownSummary(breakdown?: { amount_score: number; date_score: number
   const sorted = [...scores].sort((a, b) => b.value - a.value);
   const strongest = sorted[0];
   const weakest = sorted[sorted.length - 1];
-  return `Average confidence is ${breakdown.confidence.toFixed(0)}% (amount ${breakdown.amount_score.toFixed(0)}%, date ${breakdown.date_score.toFixed(0)}%, reference ${breakdown.reference_score.toFixed(0)}%), strongest on ${strongest.label} and weakest on ${weakest.label}.`;
+  return `Average confidence is ${breakdown.confidence.toFixed(2)}% (amount ${breakdown.amount_score.toFixed(2)}%, date ${breakdown.date_score.toFixed(2)}%, reference ${breakdown.reference_score.toFixed(2)}%), strongest on ${strongest.label} and weakest on ${weakest.label}.`;
 }
 
 function InfoGrid({ group }: { group: MatchGroup }) {
@@ -142,19 +148,25 @@ export default function GroupDetail({ group, onDecision, upload }: GroupDetailPr
           acc.amount += scores.amount_score ?? 0;
           acc.date += scores.date_score ?? 0;
           acc.reference += scores.reference_score ?? 0;
-          acc.confidence += scores.confidence ?? 0;
           return acc;
         },
-        { count: 0, amount: 0, date: 0, reference: 0, confidence: 0 },
+        { count: 0, amount: 0, date: 0, reference: 0 },
       )
     : null;
+  const varianceAmountScore = amountScoreFromVariance(group.total_expected_myr, group.total_variance_myr);
   const averageScores = averagedBreakdown && averagedBreakdown.count > 0
-    ? {
-        amount_score: averagedBreakdown.amount / averagedBreakdown.count,
-        date_score: averagedBreakdown.date / averagedBreakdown.count,
-        reference_score: averagedBreakdown.reference / averagedBreakdown.count,
-        confidence: averagedBreakdown.confidence / averagedBreakdown.count,
-      }
+    ? (() => {
+        const amountScore = varianceAmountScore ?? (averagedBreakdown.amount / averagedBreakdown.count);
+        const dateScore = averagedBreakdown.date / averagedBreakdown.count;
+        const referenceScore = averagedBreakdown.reference / averagedBreakdown.count;
+        const weightedConfidence = (amountScore * 0.4) + (dateScore * 0.3) + (referenceScore * 0.3);
+        return {
+          amount_score: amountScore,
+          date_score: dateScore,
+          reference_score: referenceScore,
+          confidence: weightedConfidence,
+        };
+      })()
     : null;
   const totalSummary = `Total expected MYR ${formatAmount(group.total_expected_myr)} vs received MYR ${formatAmount(group.total_received_myr)} results in a variance of MYR ${formatAmount(group.total_variance_myr)}.`;
   const scoreSummary = breakdownSummary(averageScores);
@@ -225,10 +237,11 @@ export default function GroupDetail({ group, onDecision, upload }: GroupDetailPr
     }
   };
 
+  const groupAverageConfidence = averageScores?.confidence ?? group.confidence ?? 0;
   const confColor =
-    (group.confidence ?? 0) >= 85
+    groupAverageConfidence >= 85
       ? "text-green-500 bg-green-950/40 border-green-800/40"
-      : (group.confidence ?? 0) >= 60
+      : groupAverageConfidence >= 60
       ? "text-amber-500 bg-amber-950/40 border-amber-800/40"
       : "text-red-500 bg-red-950/40 border-red-800/40";
 
@@ -247,7 +260,7 @@ export default function GroupDetail({ group, onDecision, upload }: GroupDetailPr
           </p>
         </div>
         <span className={`px-2.5 py-0.5 rounded-full text-[13px] font-bold font-mono border ${confColor} shrink-0`}>
-          {Math.round(group.confidence ?? 0)}% conf
+          {Math.round(groupAverageConfidence)}% conf
         </span>
       </div>
 
@@ -261,7 +274,7 @@ export default function GroupDetail({ group, onDecision, upload }: GroupDetailPr
       {isPartial && (
         <div className="rounded-md p-3 bg-amber-950/30 border border-amber-800/50 text-[11px] text-amber-300">
           <span className="font-bold text-amber-400">Partial Payment: </span>
-          Only {coveragePct.toFixed(1)}% received. Outstanding MYR {(group.remaining_amount_myr ?? 0).toFixed(2)}.
+          Only {coveragePct.toFixed(1)}% received. Outstanding MYR {formatAmount(group.remaining_amount_myr)}.
         </div>
       )}
 
@@ -269,7 +282,7 @@ export default function GroupDetail({ group, onDecision, upload }: GroupDetailPr
         <div className="flex justify-between text-[10px] uppercase tracking-wider text-neutral-500 font-bold">
           <span>Payment coverage</span>
           <span className="font-mono text-neutral-300">
-            MYR {(group.total_received_myr ?? 0).toFixed(2)} / {(group.total_expected_myr ?? 0).toFixed(2)}
+            MYR {formatAmount(group.total_received_myr)} / {formatAmount(group.total_expected_myr)}
           </span>
         </div>
         <CoverageBar pct={coveragePct} expected={group.total_expected_myr} received={group.total_received_myr} />
@@ -284,7 +297,7 @@ export default function GroupDetail({ group, onDecision, upload }: GroupDetailPr
             <div key={inv.id ?? idx} className={`${idx > 0 ? "border-t border-[#21262d]/50 pt-2" : ""}`}>
               <p className="text-[12px] font-semibold text-white truncate">{inv.invoice_no ?? "INV-????"}</p>
               <p className="text-[11px] text-neutral-500 truncate">{inv.customer ?? "-"}</p>
-              <p className="text-[11px] font-mono text-blue-400 mt-0.5">{inv.currency} {inv.amount?.toFixed(2)} to MYR {inv.expected_myr?.toFixed(2) ?? "-"}</p>
+              <p className="text-[11px] font-mono text-blue-400 mt-0.5">{inv.currency} {formatAmount(inv.amount)} to MYR {formatAmount(inv.expected_myr)}</p>
             </div>
           ))}
         </div>
@@ -295,9 +308,9 @@ export default function GroupDetail({ group, onDecision, upload }: GroupDetailPr
             <p className="text-[12px] text-neutral-600 italic">No transactions</p>
           ) : transactions.map((tx, idx) => (
             <div key={tx.id ?? idx} className={`${idx > 0 ? "border-t border-[#21262d]/50 pt-2" : ""}`}>
-              <p className="text-[11px] text-neutral-400 font-mono leading-tight truncate">{(tx.description ?? "").replace(/\b\d{10,16}\b/g, "**********").slice(0, 60)}</p>
-              <p className="text-[12px] font-bold font-mono text-green-400 mt-0.5">MYR {tx.credit_amount?.toFixed(2)}</p>
-              <p className="text-[11px] text-neutral-600">{tx.transaction_date}</p>
+              <p className="text-[12px] font-semibold text-white truncate">MYR {formatAmount(tx.credit_amount)}</p>
+              <p className="text-[11px] text-neutral-500 truncate">{tx.transaction_date}</p>
+              <p className="text-[11px] font-mono text-neutral-400 mt-0.5 truncate">{tx.description}</p>
             </div>
           ))}
         </div>

@@ -11,6 +11,7 @@ interface PendingQueueProps {
   activeGroupId?: string;
   onSelectCase: (result: MatchResult) => void;
   onSelectGroup: (group: MatchGroup) => void;
+  allResults?: MatchResult[];
   autoMatched: MatchResult[];
   upload?: { phase: string; invoiceName?: string; invoiceNames?: string[]; invoiceCount?: number } | null;
   // legacy compatibility
@@ -39,6 +40,7 @@ export default function PendingQueue({
   activeGroupId,
   onSelectCase,
   onSelectGroup,
+  allResults,
   autoMatched,
   upload,
   // legacy compat
@@ -64,10 +66,25 @@ export default function PendingQueue({
 
   // Create a map of invoice ID to MatchResult for grouped invoices
   const invoiceToResult = new Map<string, MatchResult>();
-  pending.forEach((result) => {
+  const invoiceNoToResult = new Map<string, MatchResult>();
+  (allResults ?? pending).forEach((result) => {
     if (result.invoice?.id && groupedInvoiceIds.has(result.invoice.id)) {
       invoiceToResult.set(result.invoice.id, result);
     }
+    if (result.invoice?.invoice_no) {
+      invoiceNoToResult.set(result.invoice.invoice_no, result);
+    }
+  });
+  pendingGroups.forEach((group) => {
+    group.match_results?.forEach((result) => {
+      if (result.invoice_id) {
+        invoiceToResult.set(result.invoice_id, result as MatchResult);
+      }
+      const invoiceNo = result.invoice?.invoice_no;
+      if (invoiceNo) {
+        invoiceNoToResult.set(invoiceNo, result as MatchResult);
+      }
+    });
   });
 
   const toggleGroupExpand = (groupId: string) => {
@@ -166,7 +183,7 @@ export default function PendingQueue({
 
                     <div className="flex flex-col items-end gap-1 shrink-0">
                       <span className="text-[11px] text-neutral-400 font-mono">
-                        {inv?.currency} {inv?.amount?.toFixed(0) ?? "—"}
+                        {inv?.currency} {inv?.amount?.toFixed(2) ?? "—"}
                       </span>
                       <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold font-mono border ${confBadge(conf)}`}>
                         {Math.round(conf)}%
@@ -250,7 +267,11 @@ export default function PendingQueue({
                     {isExpanded && group.invoices && group.invoices.length > 0 && (
                       <div className="bg-[#0d1117]/60 border-l-2 border-l-purple-500/40 divide-y divide-[#30363d]">
                         {group.invoices.map((inv, idx) => {
-                          const matchResult = inv.id ? invoiceToResult.get(inv.id) : undefined;
+                          const matchResult = inv.id
+                            ? invoiceToResult.get(inv.id)
+                            : inv.invoice_no
+                            ? invoiceNoToResult.get(inv.invoice_no)
+                            : undefined;
                           
                           return (
                             <button
@@ -275,7 +296,7 @@ export default function PendingQueue({
                                 {inv.customer ?? "Unknown"}
                               </div>
                               <div className="text-[10px] text-neutral-600 mt-1">
-                                {inv.currency} {inv.amount?.toFixed(0) ?? "—"}
+                                {inv.currency} {inv.amount?.toFixed(2) ?? "—"}
                               </div>
                             </button>
                           );

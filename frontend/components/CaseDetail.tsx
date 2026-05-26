@@ -44,7 +44,7 @@ function breakdownSummary(breakdown?: MatchResult["score_breakdown"]) {
   const sorted = [...scores].sort((a, b) => b.value - a.value);
   const strongest = sorted[0];
   const weakest = sorted[sorted.length - 1];
-  return `Confidence is ${breakdown.confidence.toFixed(0)}% (amount ${breakdown.amount_score.toFixed(0)}%, date ${breakdown.date_score.toFixed(0)}%, reference ${breakdown.reference_score.toFixed(0)}%), strongest on ${strongest.label} and weakest on ${weakest.label}.`;
+  return `Confidence is ${breakdown.confidence.toFixed(2)}% (amount ${breakdown.amount_score.toFixed(2)}%, date ${breakdown.date_score.toFixed(2)}%, reference ${breakdown.reference_score.toFixed(2)}%), strongest on ${strongest.label} and weakest on ${weakest.label}.`;
 }
 
 function InfoGrid({ result }: { result: MatchResult }) {
@@ -183,8 +183,8 @@ export default function CaseDetail({ result, onDecision, upload }: CaseDetailPro
         <div className="p-3.5 rounded-md border border-[#30363d] bg-[#0d1117]">
           <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">Invoice</p>
           <Field label="Customer" value={inv?.customer} />
-          <Field label="Amount" value={inv?.amount != null ? `${inv.currency} ${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "-"} />
-          <Field label="Expected MYR" value={<span className="text-blue-500 font-bold">MYR {inv?.expected_myr?.toLocaleString(undefined, { minimumFractionDigits: 2 }) ?? "-"}</span>} />
+          <Field label="Amount" value={inv?.amount != null ? `${inv.currency} ${formatAmount(inv.amount)}` : "-"} />
+          <Field label="Expected MYR" value={<span className="text-blue-500 font-bold">MYR {formatAmount(inv?.expected_myr)}</span>} />
           <Field label="Invoice date" value={inv?.invoice_date} />
           <Field label="Reference" value={inv?.payment_reference ?? inv?.invoice_no} />
         </div>
@@ -193,9 +193,9 @@ export default function CaseDetail({ result, onDecision, upload }: CaseDetailPro
           <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">Bank Transaction</p>
           <Field label="Description" value={<span className="text-[11px] leading-tight break-all font-mono">{maskText(tx?.description)}</span>} />
           <Field label="Parsed customer" value={tx?.parsed_customer || "-"} />
-          <Field label="Received MYR" value={<span className="text-green-500 font-bold">MYR {tx?.credit_amount?.toLocaleString(undefined, { minimumFractionDigits: 2 }) ?? "-"}</span>} />
+          <Field label="Received MYR" value={<span className="text-green-500 font-bold">MYR {formatAmount(tx?.credit_amount)}</span>} />
           <Field label="Transaction date" value={tx?.transaction_date} />
-          <Field label="Variance" value={<span className={`font-bold ${variance >= 0 ? "text-green-500" : "text-red-500"}`}>{variance >= 0 ? "+" : ""}MYR {variance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>} />
+          <Field label="Variance" value={<span className={`font-bold ${variance >= 0 ? "text-green-500" : "text-red-500"}`}>{variance >= 0 ? "+" : ""}MYR {formatAmount(variance)}</span>} />
         </div>
       </div>
 
@@ -203,13 +203,13 @@ export default function CaseDetail({ result, onDecision, upload }: CaseDetailPro
         <div className="rounded-md p-3.5 bg-blue-950/20 border border-blue-900/50">
           <p className="text-[10px] font-bold uppercase tracking-wider text-blue-400 mb-2">FX calculation</p>
           <div className="flex flex-wrap items-center gap-2 font-mono text-[12px] text-neutral-200">
-            <span>{inv.currency} {inv.amount?.toFixed(0)}</span>
+            <span>{inv.currency} {formatAmount(inv.amount)}</span>
             <span>x</span>
             <span>{inv.fx_rate.toFixed(4)}</span>
             <span>=</span>
-            <span>MYR {inv.expected_myr?.toFixed(2)}</span>
+            <span>MYR {formatAmount(inv.expected_myr)}</span>
             <span>+/-2%</span>
-            <span>{rangeMin.toFixed(2)} - {rangeMax.toFixed(2)}</span>
+            <span>{formatAmount(rangeMin)} - {formatAmount(rangeMax)}</span>
           </div>
         </div>
       )}

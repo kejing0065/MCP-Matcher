@@ -143,6 +143,7 @@ function ReviewContent() {
           activeGroupId={activeGroupId}
           onSelectCase={(r) => setActive({ kind: "case", data: r })}
           onSelectGroup={(g) => setActive({ kind: "group", data: g })}
+          allResults={data?.results ?? []}
           autoMatched={autoMatched}
           upload={upload}
           // Legacy props for compatibility
