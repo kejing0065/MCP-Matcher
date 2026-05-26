@@ -29,11 +29,29 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+function formatAmount(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "-";
+  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function breakdownSummary(breakdown?: MatchResult["score_breakdown"]) {
+  if (!breakdown) return null;
+  const scores = [
+    { label: "amount", value: breakdown.amount_score },
+    { label: "date", value: breakdown.date_score },
+    { label: "reference", value: breakdown.reference_score },
+  ];
+  const sorted = [...scores].sort((a, b) => b.value - a.value);
+  const strongest = sorted[0];
+  const weakest = sorted[sorted.length - 1];
+  return `Confidence is ${breakdown.confidence.toFixed(0)}% (amount ${breakdown.amount_score.toFixed(0)}%, date ${breakdown.date_score.toFixed(0)}%, reference ${breakdown.reference_score.toFixed(0)}%), strongest on ${strongest.label} and weakest on ${weakest.label}.`;
+}
+
 function InfoGrid({ result }: { result: MatchResult }) {
   const items: [string, React.ReactNode, boolean?][] = [
     ["Exception type", result.exception_type],
     ["Severity", result.severity],
-    ["Reason", result.exception_explanation || result.reason, true],
+    ["Reason", result.reason, true],
     ["Recommended action", result.recommended_action, true],
     ["Suggested execution", result.suggested_execution_action],
     ["Human review", result.requires_human_review ? "Required" : "Not required"],
@@ -105,6 +123,10 @@ export default function CaseDetail({ result, onDecision, upload }: CaseDetailPro
   const tolerance = (inv?.expected_myr ?? 0) * 0.02;
   const rangeMin = (inv?.expected_myr ?? 0) - tolerance;
   const rangeMax = (inv?.expected_myr ?? 0) + tolerance;
+  const scoreSummary = breakdownSummary(result.score_breakdown);
+  const agentSummary = inv || tx
+    ? `The invoice amount is ${inv?.currency ?? "-"} ${formatAmount(inv?.amount)}, with an expected MYR ${formatAmount(inv?.expected_myr)} vs actual MYR ${formatAmount(tx?.credit_amount)}, producing a variance of MYR ${formatAmount(variance)}.${scoreSummary ? ` ${scoreSummary}` : ""}`
+    : null;
 
   const decide = async (decision: "approved" | "rejected") => {
     setBusy(true);
@@ -195,6 +217,18 @@ export default function CaseDetail({ result, onDecision, upload }: CaseDetailPro
       {result.score_breakdown && (
         <div className="border-t border-[#21262d]/50 pt-3">
           <ConfidenceBreakdown breakdown={result.score_breakdown} />
+        </div>
+      )}
+
+      {agentSummary && (
+        <div className="rounded-md p-3 bg-amber-950/20 border border-amber-900/50">
+          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-1.5">
+            <span aria-hidden>🤖</span>
+            <span>Agent explanation</span>
+          </div>
+          <p className="text-[12px] text-neutral-300 leading-relaxed">
+            {agentSummary}
+          </p>
         </div>
       )}
 
