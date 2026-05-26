@@ -2,7 +2,6 @@
 
 > **Cross-border payment reconciliation for Malaysian SMEs — powered by AI agents and MCP tools.**
 
-Built for the **APU AIC Hackathon 2026** · Sponsored by [Chutes](https://chutes.ai) · [Morpheus](https://morpheus.network)
 
 ---
 
