@@ -135,7 +135,7 @@
  
 
 ### Core Principle
-> **LLM explains. Python calculates. Rules decide. Human approves.**
+> **LLM Analyst. LLM Match. LLM explains. Python calculates. Rules decide. Human approves.**
 
 ---
 
