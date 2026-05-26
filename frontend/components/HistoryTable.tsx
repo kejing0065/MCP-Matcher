@@ -156,7 +156,8 @@ export default function HistoryTable({
       <div className="flex flex-col">
         {filteredGroups.map((group, idx) => {
           const isExpanded = expandedGroupId === group.id;
-          const isLast = idx === filteredGroups.length - 1 && filtered.length === 0;
+          const isLast =
+            idx === filteredGroups.length - 1 && filtered.length === 0;
           const invoices = group.invoices ?? [];
           const transactions = group.bank_transactions ?? [];
           const variance = group.total_variance_myr ?? 0;
@@ -164,10 +165,12 @@ export default function HistoryTable({
           const invoiceLabel =
             invoices.length > 1
               ? `Group (${invoices.length})`
-              : invoices[0]?.invoice_no ?? "Group";
+              : (invoices[0]?.invoice_no ?? "Group");
           const customerLabel =
-            invoices.map((inv) => inv.customer).filter(Boolean).join(", ") ||
-            "—";
+            invoices
+              .map((inv) => inv.customer)
+              .filter(Boolean)
+              .join(", ") || "—";
           const amountLabel =
             group.total_received_myr != null
               ? `MYR ${group.total_received_myr.toFixed(2)}`
@@ -269,17 +272,23 @@ export default function HistoryTable({
                         Invoices
                       </p>
                       {invoices.length === 0 ? (
-                        <p className="text-[12px] text-neutral-500">No invoices</p>
+                        <p className="text-[12px] text-neutral-500">
+                          No invoices
+                        </p>
                       ) : (
                         <div className="space-y-3">
                           {invoices.map((inv) => (
-                            <div key={inv.id ?? inv.invoice_no} className="rounded-md border border-[#21262d]/60 bg-[#0b1118] p-3">
+                            <div
+                              key={inv.id ?? inv.invoice_no}
+                              className="rounded-md border border-[#21262d]/60 bg-[#0b1118] p-3"
+                            >
                               <div className="flex items-center justify-between gap-2">
                                 <p className="text-[12px] text-neutral-200 font-semibold">
                                   {inv.invoice_no ?? "INV-????"}
                                 </p>
                                 <p className="text-[11px] text-neutral-400 font-mono">
-                                  {inv.currency ?? ""} {inv.amount?.toFixed(2) ?? "—"}
+                                  {inv.currency ?? ""}{" "}
+                                  {inv.amount?.toFixed(2) ?? "—"}
                                 </p>
                               </div>
                               <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
@@ -287,17 +296,25 @@ export default function HistoryTable({
                                 <div className="text-neutral-200 text-right">
                                   {inv.customer ?? "—"}
                                 </div>
-                                <div className="text-neutral-500">Expected MYR</div>
+                                <div className="text-neutral-500">
+                                  Expected MYR
+                                </div>
                                 <div className="text-blue-400 text-right">
                                   {inv.expected_myr?.toFixed(2) ?? "—"}
                                 </div>
-                                <div className="text-neutral-500">Invoice date</div>
+                                <div className="text-neutral-500">
+                                  Invoice date
+                                </div>
                                 <div className="text-neutral-200 text-right">
                                   {inv.invoice_date ?? "—"}
                                 </div>
-                                <div className="text-neutral-500">Reference</div>
+                                <div className="text-neutral-500">
+                                  Reference
+                                </div>
                                 <div className="text-neutral-200 text-right">
-                                  {inv.payment_reference ?? inv.invoice_no ?? "—"}
+                                  {inv.payment_reference ??
+                                    inv.invoice_no ??
+                                    "—"}
                                 </div>
                               </div>
                             </div>
@@ -311,7 +328,9 @@ export default function HistoryTable({
                         Bank transactions
                       </p>
                       {transactions.length === 0 ? (
-                        <p className="text-[12px] text-neutral-500">No transactions</p>
+                        <p className="text-[12px] text-neutral-500">
+                          No transactions
+                        </p>
                       ) : (
                         <div className="space-y-2">
                           {transactions.map((tx) => (
@@ -320,7 +339,8 @@ export default function HistoryTable({
                                 MYR {tx.credit_amount?.toFixed(2) ?? "—"}
                               </p>
                               <p className="text-neutral-500">
-                                {tx.transaction_date ?? "—"} · {maskText(tx.description)}
+                                {tx.transaction_date ?? "—"} ·{" "}
+                                {maskText(tx.description)}
                               </p>
                             </div>
                           ))}
@@ -329,14 +349,13 @@ export default function HistoryTable({
                     </div>
                   </div>
 
-                  {(group.exception_explanation || group.exception_type) && (
+                  {group.exception_explanation && (
                     <div className="rounded-md p-3 bg-amber-950/20 border border-amber-900/50 mt-4">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-1.5">
                         Agent explanation
                       </p>
                       <p className="text-[12px] text-neutral-300 leading-relaxed">
-                        {group.exception_explanation ||
-                          displayValue(group.exception_type)}
+                        {group.exception_explanation}
                       </p>
                     </div>
                   )}
@@ -654,13 +673,13 @@ export default function HistoryTable({
                         </div>
                       )}
 
-                      {(result.exception_explanation || result.reason) && (
+                      {result.exception_explanation && (
                         <div className="rounded-md p-3 bg-amber-950/20 border border-amber-900/50">
                           <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-1.5">
                             Agent explanation
                           </p>
                           <p className="text-[12px] text-neutral-300 leading-relaxed">
-                            {result.exception_explanation || result.reason}
+                            {result.exception_explanation}
                           </p>
                         </div>
                       )}

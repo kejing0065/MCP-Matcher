@@ -60,12 +60,12 @@ export default function HistoryPage() {
     ]);
     const csv = [h, ...body]
       .map((row) =>
-        row.map((c) => (String(c).includes(",") ? `"${c}"` : c)).join(",")
+        row.map((c) => (String(c).includes(",") ? `"${c}"` : c)).join(","),
       )
       .join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(
-      new Blob([csv], { type: "text/csv;charset=utf-8;" })
+      new Blob([csv], { type: "text/csv;charset=utf-8;" }),
     );
     a.download = `reconciliation-history-${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
@@ -103,12 +103,14 @@ export default function HistoryPage() {
 
         {/* Tab row */}
         <div className="flex items-center gap-2 mb-6 select-none">
-          {([
-            { id: "all", label: "All", count: decided.length },
-            { id: "approved", label: "Approved", count: approved.length },
-            { id: "rejected", label: "Rejected", count: rejected.length },
-            { id: "partial", label: "Partial", count: partial.length },
-          ] as { id: Tab; label: string; count: number }[]).map((t) => (
+          {(
+            [
+              { id: "all", label: "All", count: decided.length },
+              { id: "approved", label: "Approved", count: approved.length },
+              { id: "rejected", label: "Rejected", count: rejected.length },
+              { id: "partial", label: "Partial", count: partial.length },
+            ] as { id: Tab; label: string; count: number }[]
+          ).map((t) => (
             <button
               key={t.id}
               className={`px-4 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
@@ -125,7 +127,11 @@ export default function HistoryPage() {
 
         {/* History table component */}
         <div className="w-full">
-          <HistoryTable results={decided} groups={data?.groups ?? []} activeTab={tab} />
+          <HistoryTable
+            results={decided}
+            groups={data?.groups ?? []}
+            activeTab={tab}
+          />
         </div>
       </div>
       <Toast />
