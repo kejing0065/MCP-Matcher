@@ -71,11 +71,17 @@ function FieldRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+function formatAmount(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "-";
+  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function InfoGrid({ group }: { group: MatchGroup }) {
+  const groupReason = group.match_results?.find((result) => result.reason)?.reason;
   const items: [string, React.ReactNode, boolean?][] = [
     ["Exception type", group.exception_type],
     ["Severity", group.severity],
-    ["Reason", group.exception_explanation, true],
+    ["Reason", groupReason, true],
     ["Recommended action", group.recommended_action, true],
     ["Suggested execution", group.suggested_execution_action],
     ["Human review", group.requires_human_review ? "Required" : "Not required"],
@@ -102,6 +108,21 @@ export default function GroupDetail({ group, onDecision, upload }: GroupDetailPr
   const invoices = group.invoices ?? [];
   const transactions = group.bank_transactions ?? [];
   const coveragePct = group.coverage_pct ?? 0;
+  const groupReason = group.match_results?.find((result) => result.reason)?.reason;
+  const invoiceSummary = invoices
+    .map((inv) => {
+      const invoiceNo = inv.invoice_no ?? "INV-????";
+      const currency = inv.currency ?? "-";
+      return `Invoice ${invoiceNo} is ${currency} ${formatAmount(inv.amount)}, which should land around MYR ${formatAmount(inv.expected_myr)}.`;
+    })
+    .join(" ");
+  const transactionSummary = transactions
+    .map((tx) => `A related bank transaction shows a receipt of MYR ${formatAmount(tx.credit_amount)}.`)
+    .join(" ");
+  const totalSummary = `In total, expected MYR ${formatAmount(group.total_expected_myr)} vs received MYR ${formatAmount(group.total_received_myr)} results in a variance of MYR ${formatAmount(group.total_variance_myr)}.`;
+  const groupAgentSummary = [invoiceSummary, transactionSummary, totalSummary]
+    .filter(Boolean)
+    .join(" ");
   const isDuplicate = group.scenario_type === "s6_duplicate";
   const isPartial = group.scenario_type === "s5_partial" || group.status === "partial";
   const isUploading = upload && upload.phase !== "done" && upload.phase !== "error";
@@ -362,6 +383,18 @@ export default function GroupDetail({ group, onDecision, upload }: GroupDetailPr
         <div className="border-t border-[#21262d]/50 pt-3">
           <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-3">Group Overall Confidence</p>
           <ConfidenceBreakdown breakdown={group.score_breakdown} />
+        </div>
+      )}
+
+      {groupAgentSummary && (
+        <div className="rounded-md p-3 bg-amber-950/20 border border-amber-900/50">
+          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-1.5">
+            <span aria-hidden>🤖</span>
+            <span>Agent explanation</span>
+          </div>
+          <p className="text-[12px] text-neutral-300 leading-relaxed">
+            {groupAgentSummary}
+          </p>
         </div>
       )}
 
