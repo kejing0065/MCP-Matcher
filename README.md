@@ -339,19 +339,11 @@ Download Poppler from [oschwartz10612/poppler-windows](https://github.com/oschwa
 
 ## 🧪 Test Data
 
-Use [sample_bank.csv](sample_bank.csv) as a simple starter bank statement for local testing.
+Invoice
+Use [INV-2005.pdf](INV-2005.pdf) and [INV-2006.pdf](INV-2006.pdf) as multiple test invoices for one one transaction in local testing.
 
----
-
-## 📱 Pages
-
-| Route      | Description                                                  |
-| ---------- | ------------------------------------------------------------ |
-| `/`        | Upload invoice (PDF/image) and bank statement (CSV)          |
-| `/review`  | Two-column review — pending queue left, case detail right    |
-| `/history` | Decision history with Approved/Rejected tabs and audit trail |
-
----
+Bank Statment CSV
+Use [sample_bank.csv](sample_bank.csv) as a bank statement for local testing.
 
 ## 🌐 Free APIs Used
 
