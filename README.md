@@ -292,6 +292,8 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-supabase-service-role-key
 GROQ_API_KEY=your-groq-api-key
 CHUTES_API_KEY=your-chutes-api-key
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+TELEGRAM_CHAT_ID=your-telegram-chat-id
 ```
 
 Run the database schema in your Supabase SQL Editor:
