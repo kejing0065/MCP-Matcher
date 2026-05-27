@@ -341,11 +341,21 @@ Download Poppler from [oschwartz10612/poppler-windows](https://github.com/oschwa
 
 ## 🧪 Test Data
 
+## Two or More Invoice to one transaction
+
 Invoice
 Use [INV-2005.pdf](INV-2005.pdf) and [INV-2006.pdf](INV-2006.pdf) as multiple test invoices for one one transaction in local testing.
 
 Bank Statment CSV
-Use [sample_bank.csv](sample_bank.csv) as a bank statement for local testing.
+Use [sample_bank_multiple.csv](sample_bank_multiple.csv) as a bank statement for local testing.
+
+## One Invoice to one transaction
+
+Invoice
+Use [INV-1023.pdf](INV-1023.pdf) as a single test invoices for one to one transaction in local testing.
+
+Bank Statment CSV
+Use [sample_bank_single.csv](sample_bank_single.csv) as a bank statement for local testing.
 
 ## 🌐 Free APIs Used
 
